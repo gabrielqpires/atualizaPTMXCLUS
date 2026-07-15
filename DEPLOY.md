@@ -1,73 +1,62 @@
 # Deploy — painel-intl
 
-Painel internacional de faturamento (Next.js + Postgres). Deploy na Vercel com
-sync automático do Metabase a cada 10 min.
+Painel internacional de faturamento (Next.js + Postgres). Produção na Vercel com
+sync automático do Metabase via GitHub Actions.
 
-## 1. Subir para o GitHub
+- **Repo:** https://github.com/gabrielqpires/atualizaPTMXCLUS
+- **Produção:** https://painel-intl.vercel.app (projeto Vercel `painel-intl`)
 
-O repositório já está inicializado localmente com um commit. Crie o repo no
-GitHub (recomendado: **privado**) e faça o push:
-
-```bash
-# no diretório painel-intl
-git remote add origin https://github.com/<seu-usuario>/painel-intl.git
-git branch -M main
-git push -u origin main
-```
-
-## 2. Conectar na Vercel
-
-1. vercel.com → **Add New → Project** → importe o repo `painel-intl`.
-2. Framework: Next.js (detectado automaticamente).
-3. Em **Environment Variables**, adicione:
+## Variáveis de ambiente (Vercel → Settings → Environment Variables)
 
 | Variável | Valor |
 |---|---|
-| `DATABASE_URL` | (mesma string do `.env.local`) |
-| `MB_BASE_URL` | URL base do Metabase (ex: `https://metabase.suaempresa.com`) |
+| `DATABASE_URL` | string de conexão do Postgres/Supabase |
+| `MB_BASE_URL` | `https://shipsmart.metabaseapp.com` |
 | `MB_USERNAME` | usuário do Metabase |
 | `MB_PASSWORD` | senha do Metabase |
-| `MB_CARD_ID` | id da saved question (ex: `15893`) |
+| `MB_CARD_ID` | id da saved question |
 | `MB_FROM_DATE` | data de corte, opcional (default `2026-05-01`) |
-| `CRON_SECRET` | `82d15851c6a871779026d0787e7bae35cee570d8934fa0a9` |
+| `CRON_SECRET` | segredo do endpoint de sync (`/api/sync`) |
+| `PANEL_PASSWORD` | senha da tela de login do painel |
 
-> As credenciais `MB_*` estão no Apps Script antigo em
+> `MB_USERNAME/PASSWORD/CARD_ID` estão no Apps Script antigo em
 > **Configurações do projeto → Propriedades do script**.
+> Depois de alterar env vars, é preciso re-deployar (`npx vercel --prod --yes`).
 
-4. **Deploy**. Push na `main` re-deploya automaticamente.
+## Proteção por senha
 
-## 3. Gatilho do sync a cada 10 min
+Todo o painel (páginas e APIs) exige login definido por `PANEL_PASSWORD`
+(cookie de 30 dias). Exceções: `/login`, `/api/login` e `GET /api/sync`
+(protegido pelo próprio `CRON_SECRET`). Sem `PANEL_PASSWORD` configurada
+(ex.: dev local), nada é bloqueado.
 
-O endpoint é `GET /api/sync` e exige o header `Authorization: Bearer <CRON_SECRET>`
-(ou `?secret=<CRON_SECRET>` na URL).
+## Sync automático (GitHub Actions, 1x por hora)
 
-### Opção A — cron-job.org (recomendado, grátis, qualquer plano Vercel)
+Workflow: `.github/workflows/sync.yml` — chama `GET /api/sync` com
+`Authorization: Bearer <CRON_SECRET>`. Cadência horária ≈ 720 min/mês,
+dentro dos 2.000 grátis de repo privado.
 
-1. Crie conta em https://cron-job.org.
-2. **Create cronjob**:
-   - URL: `https://<seu-deploy>.vercel.app/api/sync?secret=82d15851c6a871779026d0787e7bae35cee570d8934fa0a9`
-   - Schedule: a cada 10 minutos (`*/10`).
-3. Salvar. Pronto — roda de 10 em 10 min de forma confiável.
+Secrets necessários no repo (**Settings → Secrets and variables → Actions**):
 
-### Opção B — GitHub Actions (`.github/workflows/sync.yml`, já incluso)
+- `SYNC_URL` = `https://painel-intl.vercel.app`
+- `CRON_SECRET` = mesmo valor da env var na Vercel
 
-Em **Settings → Secrets and variables → Actions** do repo, crie:
-- `SYNC_URL` = `https://<seu-deploy>.vercel.app`
-- `CRON_SECRET` = `82d15851c6a871779026d0787e7bae35cee570d8934fa0a9`
+Rodar na mão: aba **Actions** → *Sync Metabase (1h)* → **Run workflow**,
+ou o botão **Sincronizar** dentro do painel.
 
-⚠️ Em repo **privado** consome ~4.300 min/mês (acima dos 2.000 grátis) e o
-agendador pode atrasar. Use só se o repo for público.
+## Deploy
 
-### Opção C — Vercel Cron (`vercel.json`, já incluso)
+Via CLI (funciona hoje): `npx vercel --prod --yes` na pasta do projeto.
 
-Funciona de 10 em 10 min **apenas no plano Pro**. No Hobby, roda 1x/dia.
-Se ficar no Hobby, apague o `vercel.json` e use a Opção A.
+Auto-deploy por push: conectar o repo em
+**Vercel → painel-intl → Settings → Git** (requer autorizar o GitHub App da Vercel).
 
-## 4. Testar
+## Testar
 
-- Abra o painel → botão **Sincronizar** (sync manual). Deve mostrar
-  "Processadas / Novas / Atualizadas" e atualizar a linha **Última sync**.
-- Ou via curl:
-  ```bash
-  curl "https://<seu-deploy>.vercel.app/api/sync?secret=82d15851c6a871779026d0787e7bae35cee570d8934fa0a9"
-  ```
+```bash
+# endpoint do cron (troque <CRON_SECRET>)
+curl "https://painel-intl.vercel.app/api/sync?secret=<CRON_SECRET>"
+```
+
+No painel: login → botão **Sincronizar** → deve mostrar
+"Processadas / Novas / Atualizadas" e atualizar a linha **Última sync**.

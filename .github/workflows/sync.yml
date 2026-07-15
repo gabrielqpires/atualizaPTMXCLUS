@@ -1,12 +1,10 @@
-name: Sync Metabase (10min)
+name: Sync Metabase (1h)
 
-# Gatilho a cada 10 minutos + botão manual (workflow_dispatch).
-# ATENÇÃO: em repositório PRIVADO isto consome minutos do Actions
-# (~4.300/mês, acima dos 2.000 grátis). Para repo privado, prefira o
-# cron-job.org (veja DEPLOY.md). Em repo público, o Actions é grátis.
+# Gatilho de 1 em 1 hora + botão manual (workflow_dispatch).
+# ~720 min/mês — dentro dos 2.000 grátis do GitHub Actions em repo privado.
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "0 * * * *"
   workflow_dispatch:
 
 jobs:
