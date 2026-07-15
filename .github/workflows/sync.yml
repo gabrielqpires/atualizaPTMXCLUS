@@ -1,0 +1,19 @@
+name: Sync Metabase (10min)
+
+# Gatilho a cada 10 minutos + botão manual (workflow_dispatch).
+# ATENÇÃO: em repositório PRIVADO isto consome minutos do Actions
+# (~4.300/mês, acima dos 2.000 grátis). Para repo privado, prefira o
+# cron-job.org (veja DEPLOY.md). Em repo público, o Actions é grátis.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chamar /api/sync
+        run: |
+          curl -fsS -X GET "${{ secrets.SYNC_URL }}/api/sync" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"

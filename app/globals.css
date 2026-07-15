@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+body { font-family: system-ui, sans-serif; }
+
+.btn { @apply px-3 py-1.5 rounded text-sm font-medium border border-zinc-600 bg-zinc-800 hover:bg-zinc-700 transition-colors cursor-pointer; }
+.btn-primary { @apply bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-500; }
+.btn-danger  { @apply bg-red-900/60 border-red-700 text-red-200 hover:bg-red-800; }
+
+.pill       { @apply inline-block px-2 py-0.5 rounded-full text-xs font-semibold; }
+.pill-warn  { @apply bg-amber-900/50 text-amber-300; }
+.pill-ok    { @apply bg-green-900/50 text-green-300; }
+
+.card { @apply bg-zinc-900 border border-zinc-800 rounded-lg; }
+.mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.82em; }
+
+input, select, textarea {
+  @apply bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white w-full
+         focus:outline-none focus:border-indigo-500 transition-colors;
+}
+
+table { @apply w-full text-sm border-collapse; }
+thead tr { @apply bg-zinc-800/60; }
+th { @apply text-left px-3 py-2 text-xs font-semibold text-zinc-400 uppercase tracking-wide whitespace-nowrap; }
+td { @apply px-3 py-2 border-b border-zinc-800/70; }
+tr:hover td { @apply bg-zinc-800/30; }
+.amount { @apply text-right font-mono; }
