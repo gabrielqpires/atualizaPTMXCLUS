@@ -91,6 +91,140 @@ function Janela({ inicio, fim }: { inicio: string | null; fim: string | null }) 
   return <span className="pill pill-warn">{fmtDate(inicio)} → {fmtDate(fim)}</span>;
 }
 
+// ── Formulário de item manual (Envio / Ajuste) — espelho do Apps Script ──
+function ItemManualForm({
+  clienteId, clientes, onSaved, onCancel,
+}: {
+  clienteId?: string;
+  clientes?: { cliente_id: string; nome: string }[];
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [aba, setAba] = useState<'envio' | 'ajuste'>('envio');
+  const [cli, setCli] = useState(clienteId || '');
+  // envio
+  const [awb, setAwb] = useState('');
+  const [pedido, setPedido] = useState('');
+  const [dataEnvio, setDataEnvio] = useState(today());
+  const [paisDestino, setPaisDestino] = useState('');
+  const [ddpDdu, setDdpDdu] = useState('DDP');
+  const [freteEnvio, setFreteEnvio] = useState('');
+  const [impostoEnvio, setImpostoEnvio] = useState('');
+  // ajuste
+  const [tipoAjuste, setTipoAjuste] = useState('Desconto');
+  const [tipoOutro, setTipoOutro] = useState('');
+  const [valor, setValor] = useState('');
+  const [desc, setDesc] = useState('');
+  const [dataAjuste, setDataAjuste] = useState(today());
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const totalEnvio = (parseFloat(freteEnvio) || 0) + (ddpDdu === 'DDU' ? 0 : (parseFloat(impostoEnvio) || 0));
+
+  async function salvar(e: React.FormEvent) {
+    e.preventDefault();
+    const id = clienteId || cli;
+    if (!id) { setMsg('Selecione um cliente.'); return; }
+    let body: Record<string, unknown>;
+    if (aba === 'envio') {
+      body = {
+        clienteId: id, tipo: 'envio',
+        awb: awb.trim(), pedido: pedido.trim(),
+        data: dataEnvio || today(),
+        paisDestino: paisDestino.trim().toUpperCase(), ddpDdu,
+        valorFrete: parseFloat(freteEnvio) || 0,
+        valorImposto: ddpDdu === 'DDU' ? 0 : (parseFloat(impostoEnvio) || 0),
+      };
+    } else {
+      const tipo = tipoAjuste === 'Outro' && tipoOutro.trim() ? tipoOutro.trim() : tipoAjuste;
+      body = {
+        clienteId: id, tipo,
+        descricao: desc.trim(),
+        valorFrete: parseFloat(valor) || 0, valorImposto: 0,
+        data: dataAjuste || today(),
+      };
+    }
+    setSaving(true); setMsg(null);
+    const res = await fetch('/api/itens-manuais', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    }).then(r => r.json());
+    setSaving(false);
+    if (res.ok) onSaved();
+    else setMsg('Erro: ' + (res.error || 'desconhecido'));
+  }
+
+  return (
+    <form onSubmit={salvar} className="px-5 py-4 bg-zinc-800/30 border-b border-zinc-800 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-semibold">Novo item manual</span>
+        <div className="flex gap-1">
+          <button type="button" onClick={() => setAba('envio')}
+            className={`btn text-xs ${aba === 'envio' ? 'bg-indigo-700 border-indigo-500 text-white' : ''}`}>Envio manual</button>
+          <button type="button" onClick={() => setAba('ajuste')}
+            className={`btn text-xs ${aba === 'ajuste' ? 'bg-indigo-700 border-indigo-500 text-white' : ''}`}>Ajuste</button>
+        </div>
+      </div>
+
+      {!clienteId && (
+        <div>
+          <label className="text-xs text-zinc-400 block mb-1">Cliente</label>
+          <select value={cli} onChange={e => setCli(e.target.value)} required className="w-full max-w-sm">
+            <option value="">Selecione o cliente...</option>
+            {(clientes || []).map(c => <option key={c.cliente_id} value={c.cliente_id}>{c.nome}</option>)}
+          </select>
+        </div>
+      )}
+
+      {aba === 'envio' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div><label className="text-xs text-zinc-400 block mb-1">AWB</label>
+            <input value={awb} onChange={e => setAwb(e.target.value)} placeholder="AWB" /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">Order ID</label>
+            <input value={pedido} onChange={e => setPedido(e.target.value)} placeholder="Pedido" /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">Data</label>
+            <input type="date" value={dataEnvio} onChange={e => setDataEnvio(e.target.value)} /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">País destino</label>
+            <input value={paisDestino} onChange={e => setPaisDestino(e.target.value)} placeholder="Ex: US, DE, BR" maxLength={2} /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">DDP / DDU</label>
+            <select value={ddpDdu} onChange={e => setDdpDdu(e.target.value)}>
+              <option value="DDP">DDP (sender paga imposto)</option>
+              <option value="DDU">DDU (receiver paga imposto)</option>
+            </select></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">Valor frete</label>
+            <input type="number" step="0.01" value={freteEnvio} onChange={e => setFreteEnvio(e.target.value)} required /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">Valor imposto</label>
+            <input type="number" step="0.01" value={impostoEnvio} onChange={e => setImpostoEnvio(e.target.value)} disabled={ddpDdu === 'DDU'} /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">Total</label>
+            <input readOnly value={totalEnvio.toFixed(2)} className="font-bold bg-zinc-800" /></div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div><label className="text-xs text-zinc-400 block mb-1">Tipo</label>
+            <select value={tipoAjuste} onChange={e => setTipoAjuste(e.target.value)}>
+              <option>Desconto</option><option>Sobrepeso</option><option>Armazenamento</option><option>Outro</option>
+            </select></div>
+          {tipoAjuste === 'Outro' && (
+            <div><label className="text-xs text-zinc-400 block mb-1">Tipo personalizado</label>
+              <input value={tipoOutro} onChange={e => setTipoOutro(e.target.value)} placeholder="Ex: Taxa especial" /></div>
+          )}
+          <div><label className="text-xs text-zinc-400 block mb-1">Valor</label>
+            <input type="number" step="0.01" value={valor} onChange={e => setValor(e.target.value)} required /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">Descrição</label>
+            <input value={desc} onChange={e => setDesc(e.target.value)} placeholder="Ex: Ajuste operacional" /></div>
+          <div><label className="text-xs text-zinc-400 block mb-1">Data</label>
+            <input type="date" value={dataAjuste} onChange={e => setDataAjuste(e.target.value)} /></div>
+        </div>
+      )}
+
+      {msg && <div className="text-red-400 text-xs">{msg}</div>}
+      <div className="flex gap-2">
+        <button type="submit" className="btn btn-primary text-xs" disabled={saving}>{saving ? 'Salvando...' : 'Salvar item'}</button>
+        <button type="button" className="btn text-xs" onClick={onCancel}>Cancelar</button>
+      </div>
+    </form>
+  );
+}
+
 // ── Detail Panel ──────────────────────────────────────────
 function ClienteDetail({
   cliente, pais, onClose, onFechado,
@@ -101,11 +235,6 @@ function ClienteDetail({
   const [itens, setItens] = useState<ItemManual[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [ajDesc, setAjDesc] = useState('');
-  const [ajTipo, setAjTipo] = useState('Desconto');
-  const [ajValor, setAjValor] = useState('');
-  const [ajData, setAjData] = useState(today());
-  const [ajLoading, setAjLoading] = useState(false);
   const [fecharLoading, setFecharLoading] = useState(false);
 
   const load = useCallback(async () => {
@@ -120,20 +249,6 @@ function ClienteDetail({
   }, [cliente.cliente_id]);
 
   useEffect(() => { load(); }, [load]);
-
-  async function addAjuste(e: React.FormEvent) {
-    e.preventDefault();
-    if (!ajDesc || !ajValor) return;
-    setAjLoading(true);
-    await fetch('/api/itens-manuais', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clienteId: cliente.cliente_id, descricao: ajDesc, tipo: ajTipo, valor: parseFloat(ajValor), moeda: MOEDA[pais], data: ajData || today() }),
-    });
-    setAjDesc(''); setAjValor(''); setAjData(today()); setShowForm(false);
-    await load();
-    setAjLoading(false);
-  }
 
   async function deleteItem(itemId: string) {
     if (!confirm('Remover item?')) return;
@@ -195,20 +310,16 @@ function ClienteDetail({
           {fecharLoading ? 'Fechando...' : 'Fechar Faturamento'}
         </button>
         <a href={`/api/gerar-fatura/${cliente.cliente_id}?pais=${pais}`} className="btn text-xs" target="_blank" rel="noopener noreferrer">↓ Excel</a>
-        <button className="btn text-xs" onClick={() => setShowForm(v => !v)}>{showForm ? 'Cancelar' : '+ Lançar ajuste'}</button>
+        <button className="btn text-xs" onClick={() => setShowForm(v => !v)}>{showForm ? 'Cancelar' : '+ Item manual'}</button>
       </div>
 
-      {/* Ajuste form */}
+      {/* Formulário de item manual (envio ou ajuste) */}
       {showForm && (
-        <form onSubmit={addAjuste} className="grid grid-cols-2 sm:grid-cols-5 gap-2 px-5 py-3 bg-zinc-800/30 border-b border-zinc-800">
-          <input className="col-span-2" placeholder="Descrição" value={ajDesc} onChange={e => setAjDesc(e.target.value)} required />
-          <select value={ajTipo} onChange={e => setAjTipo(e.target.value)}>
-            <option>Desconto</option><option>Sobrepeso</option><option>Armazenamento</option><option>Outro</option>
-          </select>
-          <input type="number" step="0.01" placeholder="Valor" value={ajValor} onChange={e => setAjValor(e.target.value)} required />
-          <input type="date" value={ajData} onChange={e => setAjData(e.target.value)} />
-          <button type="submit" className="btn btn-primary col-span-2 sm:col-span-5" disabled={ajLoading}>{ajLoading ? 'Salvando...' : 'Salvar ajuste'}</button>
-        </form>
+        <ItemManualForm
+          clienteId={cliente.cliente_id}
+          onSaved={async () => { setShowForm(false); await load(); }}
+          onCancel={() => setShowForm(false)}
+        />
       )}
 
       {loading ? (
@@ -260,7 +371,10 @@ function ClienteDetail({
                         <td className="amount">{fmt(i.valor_imposto, moeda)}</td>
                         <td className="text-zinc-400 text-xs">{i.ddp_ddu || '—'}</td>
                         <td className="text-xs max-w-[180px] truncate">{i.descricao || '—'}</td>
-                        <td className="text-zinc-400 text-xs">manual</td>
+                        <td className="text-zinc-400 text-xs whitespace-nowrap">
+                          manual
+                          <button className="btn btn-danger text-xs py-0.5 px-1.5 ml-2" onClick={() => deleteItem(i.item_id)}>✕</button>
+                        </td>
                       </tr>
                     );
                   })}
@@ -319,6 +433,8 @@ export default function Dashboard({ params }: { params: Promise<{ pais: string }
   const [ultimaSync, setUltimaSync] = useState<{ ts: string | null; tipo: string | null } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [showGlobalForm, setShowGlobalForm] = useState(false);
+  const [clientesPais, setClientesPais] = useState<{ cliente_id: string; nome: string }[]>([]);
 
   const moeda = MOEDA[pais];
   const impostoLabel = pais === 'PT' ? 'Imposto (Non-EU)' : 'Imposto';
@@ -379,6 +495,14 @@ export default function Dashboard({ params }: { params: Promise<{ pais: string }
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }
 
+  async function toggleGlobalForm() {
+    if (!showGlobalForm && clientesPais.length === 0) {
+      const d = await fetch(`/api/clientes?pais=${pais}`).then(r => r.json());
+      if (Array.isArray(d)) setClientesPais(d);
+    }
+    setShowGlobalForm(v => !v);
+  }
+
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-6">
       {/* Header */}
@@ -391,6 +515,9 @@ export default function Dashboard({ params }: { params: Promise<{ pais: string }
         <nav className="flex gap-2 items-center">
           <button className="btn btn-primary text-xs" onClick={syncNow} disabled={syncing}>
             {syncing ? 'Sincronizando...' : 'Sincronizar'}
+          </button>
+          <button className="btn text-xs" onClick={toggleGlobalForm}>
+            {showGlobalForm ? 'Fechar item manual' : '+ Item manual'}
           </button>
           <Link href={`/fechadas?pais=${pais}`} className="btn text-xs">Faturas fechadas</Link>
           <Link href={`/pendentes?pais=${pais}`} className="btn text-xs relative">
@@ -412,6 +539,17 @@ export default function Dashboard({ params }: { params: Promise<{ pais: string }
         )}
         {syncMsg && <span className="text-zinc-400">· {syncMsg}</span>}
       </div>
+
+      {/* Item manual global (qualquer cliente do país, mesmo sem fatura em andamento) */}
+      {showGlobalForm && (
+        <div className="card p-0 overflow-hidden mb-6">
+          <ItemManualForm
+            clientes={clientesPais}
+            onSaved={() => { setShowGlobalForm(false); loadResumos(); }}
+            onCancel={() => setShowGlobalForm(false)}
+          />
+        </div>
+      )}
 
       {loading ? (
         <div className="text-zinc-400 py-8 text-center">Carregando...</div>
