@@ -4,12 +4,13 @@ import { inferirGrupo } from './faturamento';
 // ── Config (via env vars na Vercel) ──────────────────────────
 // MB_BASE_URL, MB_USERNAME, MB_PASSWORD, MB_CARD_ID, MB_FROM_DATE
 function getConfig() {
+  // trim: env vars coladas no dashboard costumam vir com espaço/quebra de linha
   const cfg = {
-    baseUrl: process.env.MB_BASE_URL || '',
-    username: process.env.MB_USERNAME || '',
-    password: process.env.MB_PASSWORD || '',
-    cardId: process.env.MB_CARD_ID || '',
-    fromDate: process.env.MB_FROM_DATE || '2026-05-01',
+    baseUrl: (process.env.MB_BASE_URL || '').trim().replace(/\/$/, ''),
+    username: (process.env.MB_USERNAME || '').trim(),
+    password: (process.env.MB_PASSWORD || '').trim(),
+    cardId: (process.env.MB_CARD_ID || '').trim(),
+    fromDate: (process.env.MB_FROM_DATE || '2026-05-01').trim(),
   };
   if (!cfg.baseUrl || !cfg.username || !cfg.password || !cfg.cardId) {
     throw new Error('Metabase não configurado. Defina MB_BASE_URL, MB_USERNAME, MB_PASSWORD, MB_CARD_ID nas variáveis de ambiente.');
