@@ -26,7 +26,7 @@ jobs:
 
       - name: Chamar /api/sync
         run: |
-          HTTP=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" --max-time 90 --retry 2 --retry-delay 10 \
+          HTTP=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" --max-time 320 --retry 2 --retry-delay 10 \
             -X GET "${{ secrets.SYNC_URL }}/api/sync" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
           echo "HTTP $HTTP"
