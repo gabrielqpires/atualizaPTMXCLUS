@@ -5,6 +5,7 @@ export interface Cliente {
   nome: string;
   emails_usuario: string;
   emails_contato: string;
+  intermediario_cobranca: string;
   pais: Pais;
   regime: string;
   dias_vencimento: number;
