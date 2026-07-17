@@ -221,7 +221,10 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
       values.push(
         r.remessaId, r.awb, match ? match.clienteId : null, pais || null, r.email,
         r.freteUsd, r.impostoOriginal, r.impostoEur, r.impostoTipo, r.moedaCotacao,
-        r.status, r.statusCodigo, r.operacaoFaturavel, r.data || null, r.contratoDescricao,
+        // Espelho do Apps Script: só o "Ignorar" manual exclui da janela (isFaturavel_
+        // testa apenas 'nao'); o is_operacao_faturavel do Metabase NÃO desativa remessa
+        // (senão FOC etc. somem). Insert sempre true; update preserva o valor local.
+        r.status, r.statusCodigo, true, r.data || null, r.contratoDescricao,
         tms, mor, r.orderId, r.weight, r.destination, r.group
       );
     });
@@ -241,7 +244,7 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
         moeda_cotacao = EXCLUDED.moeda_cotacao,
         status = EXCLUDED.status,
         status_codigo = EXCLUDED.status_codigo,
-        operacao_faturavel = remessas.operacao_faturavel AND EXCLUDED.operacao_faturavel,
+        operacao_faturavel = remessas.operacao_faturavel,
         data = EXCLUDED.data,
         contrato_descricao = EXCLUDED.contrato_descricao,
         tms = remessas.tms OR EXCLUDED.tms,

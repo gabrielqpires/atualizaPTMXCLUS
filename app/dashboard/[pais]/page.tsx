@@ -236,6 +236,8 @@ function ClienteDetail({
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [fecharLoading, setFecharLoading] = useState(false);
+  const [showFecharModal, setShowFecharModal] = useState(false);
+  const [dataCorte, setDataCorte] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -256,17 +258,16 @@ function ClienteDetail({
     await load();
   }
 
-  async function fechar() {
-    if (!confirm(`Fechar faturamento de ${cliente.nome}?`)) return;
+  async function fechar(dataFechamento: string | null) {
     setFecharLoading(true);
     const res = await fetch('/api/fechar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clienteId: cliente.cliente_id, pais, nomeCliente: cliente.nome }),
+      body: JSON.stringify({ clienteId: cliente.cliente_id, pais, nomeCliente: cliente.nome, dataFechamento }),
     });
     const data = await res.json();
     setFecharLoading(false);
-    if (data.ok) { alert(`Faturamento fechado: ${data.numFatura}`); onFechado(); }
+    if (data.ok) { setShowFecharModal(false); alert(`Faturamento fechado: ${data.numFatura}`); onFechado(); }
     else alert('Erro: ' + (data.error || 'desconhecido'));
   }
 
@@ -306,7 +307,7 @@ function ClienteDetail({
 
       {/* Actions */}
       <div className="flex gap-2 px-5 py-2 border-b border-zinc-800 bg-zinc-900/50">
-        <button className="btn btn-primary text-xs" onClick={fechar} disabled={fecharLoading || (remessas.length === 0 && itens.length === 0)}>
+        <button className="btn btn-primary text-xs" onClick={() => setShowFecharModal(true)} disabled={fecharLoading || (remessas.length === 0 && itens.length === 0)}>
           {fecharLoading ? 'Fechando...' : 'Fechar Faturamento'}
         </button>
         <a href={`/api/gerar-fatura/${cliente.cliente_id}?pais=${pais}`} className="btn text-xs" target="_blank" rel="noopener noreferrer">↓ Excel</a>
@@ -412,6 +413,38 @@ function ClienteDetail({
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de fechamento (espelho do Apps Script: tudo até hoje ou data de corte) */}
+      {showFecharModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center px-4" onClick={() => setShowFecharModal(false)}>
+          <div className="card p-6 w-full max-w-md space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-base">Fechar faturamento — {cliente.nome}</h3>
+            <p className="text-zinc-400 text-sm">Escolha como fechar este faturamento:</p>
+            <button className="btn btn-primary w-full" disabled={fecharLoading} onClick={() => fechar(null)}>
+              {fecharLoading ? 'Fechando...' : 'Faturar tudo até hoje'}
+            </button>
+            <div className="border-t border-zinc-800 pt-3">
+              <p className="text-zinc-500 text-xs mb-2">Ou escolha uma data de corte — só entram remessas e itens até o fim desse dia:</p>
+              <div className="flex gap-2">
+                <input type="date" value={dataCorte} onChange={e => setDataCorte(e.target.value)} className="flex-1" />
+                <button
+                  className="btn btn-primary text-xs whitespace-nowrap"
+                  disabled={fecharLoading}
+                  onClick={() => {
+                    if (!dataCorte) { alert('Informe a data de corte.'); return; }
+                    fechar(dataCorte);
+                  }}
+                >
+                  Fechar até esta data
+                </button>
+              </div>
+            </div>
+            <div className="text-right">
+              <button className="btn text-xs" onClick={() => setShowFecharModal(false)}>Cancelar</button>
             </div>
           </div>
         </div>

@@ -11,7 +11,27 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - name: Checar secrets
+        run: |
+          FALTA=0
+          if [ -z "${{ secrets.SYNC_URL }}" ]; then
+            echo "::error::Secret SYNC_URL não configurado no repositório (Settings → Secrets and variables → Actions → Repository secrets)"
+            FALTA=1
+          fi
+          if [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "::error::Secret CRON_SECRET não configurado no repositório (Settings → Secrets and variables → Actions → Repository secrets)"
+            FALTA=1
+          fi
+          exit $FALTA
+
       - name: Chamar /api/sync
         run: |
-          curl -fsS -X GET "${{ secrets.SYNC_URL }}/api/sync" \
-            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          HTTP=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" --max-time 90 --retry 2 --retry-delay 10 \
+            -X GET "${{ secrets.SYNC_URL }}/api/sync" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}")
+          echo "HTTP $HTTP"
+          cat /tmp/resp.txt
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::Sync falhou com HTTP $HTTP — resposta acima"
+            exit 1
+          fi
