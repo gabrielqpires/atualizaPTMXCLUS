@@ -68,6 +68,21 @@ export interface ContextoRemessa {
   contratoDescricao: string;
 }
 
+// Elegibilidade do markup_media_frete:
+// - params.contratoExato → contrato_descricao idêntico (ex.: regra SweetCare
+//   "[Shipsmart PT] FEDEX CP SweetCare Partner 2026"); maxKg opcional
+// - legado (sem contratoExato) → contrato contém 'fedex' e peso <= maxKg (2.5)
+export function elegivelMediaFrete(ctx: ContextoRemessa, p: Record<string, unknown>): boolean {
+  if (p.contratoExato) {
+    if (ctx.contratoDescricao.trim() !== String(p.contratoExato).trim()) return false;
+    if (p.maxKg != null && Number(ctx.weightKg) > Number(p.maxKg)) return false;
+    return true;
+  }
+  const maxKg = p.maxKg != null ? Number(p.maxKg) : 2.5;
+  const isFedex = ctx.contratoDescricao.toLowerCase().includes('fedex');
+  return Number(ctx.weightKg) <= maxKg && isFedex;
+}
+
 export function aplicarRegras(
   valores: ValoresRemessa,
   ctx: ContextoRemessa,
@@ -88,10 +103,8 @@ export function aplicarRegras(
       valores = { ...valores, imposto: 0 };
     }
     if (r.tipo_regra === 'markup_media_frete') {
-      const maxKg = p.maxKg != null ? Number(p.maxKg) : 2.5;
       const markup = p.markup != null ? Number(p.markup) : 0;
-      const isFedex = ctx.contratoDescricao.toLowerCase().includes('fedex');
-      if (ctx.weightKg <= maxKg && isFedex) {
+      if (elegivelMediaFrete(ctx, p)) {
         valores = { ...valores, frete: round2(valores.frete * (1 + markup)) };
       }
     }
@@ -114,11 +127,7 @@ export function aplicarMediaFrete(
   for (const r of lista) {
     if (r.tipo_regra !== 'markup_media_frete') continue;
     const p = r.params as Record<string, unknown>;
-    const maxKg = p.maxKg != null ? Number(p.maxKg) : 2.5;
-    const elegiveis = items.filter(it => {
-      const isFedex = it.contexto.contratoDescricao.toLowerCase().includes('fedex');
-      return Number(it.contexto.weightKg) <= maxKg && isFedex;
-    });
+    const elegiveis = items.filter(it => elegivelMediaFrete(it.contexto, p));
     if (!elegiveis.length) continue;
     const soma = elegiveis.reduce((acc, it) => acc + it.valores.frete, 0);
     const media = round2(soma / elegiveis.length);
