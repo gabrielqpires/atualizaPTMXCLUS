@@ -81,6 +81,13 @@ const EMAIL_PAIS_FALLBACK: Record<string, string> = {
   'ecomops+schutz@arezzousa.com': 'US',
 };
 
+function inferirPaisOperacional(email: string, paisContrato: string): string {
+  if (email === 'dev@parcelabc.com') {
+    return paisContrato === 'MX' || paisContrato === 'CL' ? paisContrato : 'US';
+  }
+  return EMAIL_PAIS_FALLBACK[email] || paisContrato;
+}
+
 // ── Auth + fetch ─────────────────────────────────────────────
 let _tokenCache: { token: string; exp: number } | null = null;
 
@@ -152,7 +159,7 @@ function montarRemessas(linhas: Record<string, unknown>[]): RemessaMB[] {
       operacaoFaturavel: toBoolean(pick(row, ['is_operacao_faturavel', 'OperacaoFaturavel'])),
       data: String(pick(row, ['created_at', 'Data', 'data']) || ''),
       contratoDescricao,
-      pais: EMAIL_PAIS_FALLBACK[email] || paisContrato,
+      pais: inferirPaisOperacional(email, paisContrato),
       tms: toBoolean(pick(row, ['tms', 'TMS'])),
       mor: toBoolean(pick(row, ['mor', 'MOR'])),
       orderId: String(pick(row, ['order_id', 'OrderID', 'order', 'Order', 'pedido']) || ''),
@@ -189,7 +196,7 @@ function resolverCliente(
   if (cand.length === 1) return cand[0];
   if (!pais) return null;
   const exato = cand.filter(c => c.pais === pais);
-  return exato.length ? exato[0] : cand[0];
+  return exato.length ? exato[0] : null;
 }
 
 export interface SyncResult {
