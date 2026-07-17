@@ -176,26 +176,46 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     // ── Formato compacto: MX e Parcel US, layout original aprovado ──
     const ws = workbook.addWorksheet('Consolidado');
     ws.columns = [
-      { width: 5 },
-      { width: 35 },
+      { width: 4 },
+      { width: 48 },
+      { width: 24 },
+      { width: 14 },
+      { width: 13 },
       { width: 18 },
-      { width: 12 },
-      { width: 10 },
-      { width: 16 },
-      { width: 16 },
+      { width: 18 },
     ];
 
     const blueFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
     const whiteBold: Partial<ExcelJS.Font> = { bold: true, color: { argb: BRANCO } };
+    const lightBorder: Partial<ExcelJS.Borders> = {
+      top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+    };
     const mxAmountHeader = `Amount (${moedaFat})`;
 
     const styleSectionRow = (row: ExcelJS.Row) => {
-      row.eachCell(c => {
-        if (c.value) {
-          c.fill = blueFill;
-          c.font = whiteBold;
-        }
-      });
+      row.height = 24;
+      for (let col = 1; col <= 7; col++) {
+        const cell = row.getCell(col);
+        cell.fill = blueFill;
+        cell.font = whiteBold;
+        cell.alignment = { vertical: 'middle', horizontal: col >= 5 ? 'right' : 'left' };
+        cell.border = lightBorder;
+      }
+    };
+
+    const styleDataRow = (row: ExcelJS.Row) => {
+      row.height = 20;
+      for (let col = 1; col <= 7; col++) {
+        const cell = row.getCell(col);
+        cell.border = lightBorder;
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: col >= 5 ? 'right' : (col === 4 ? 'center' : 'left'),
+        };
+      }
     };
 
     const hdr = ws.addRow([
@@ -203,6 +223,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       `Freight (${moedaFat})`, `Duties (${moedaFat})`,
     ]);
     styleSectionRow(hdr);
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
 
     const firstDataRow = ws.rowCount + 1;
 
@@ -217,22 +238,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       ]);
       row.getCell(6).numFmt = FMT_MOEDA;
       row.getCell(7).numFmt = FMT_MOEDA;
+      styleDataRow(row);
     }
 
     const lastDataRow = ws.rowCount;
 
     if (ajustes.length > 0) {
+      ws.addRow([]);
       const ajHdr = ws.addRow(['', 'Manual Adjustments', 'Description', 'Date', '', mxAmountHeader, '']);
       styleSectionRow(ajHdr);
       for (const a of ajustes) {
         const row = ws.addRow(['', a.tipoEn, a.descricao, a.data, '', a.valor, '']);
         row.getCell(6).numFmt = FMT_MOEDA;
         if (a.valor < 0) row.getCell(6).font = { color: { argb: 'FFFF4444' } };
+        styleDataRow(row);
       }
     }
 
     const lastBeforeFeeRow = ws.rowCount;
     if (taxaPct > 0 && lastBeforeFeeRow >= firstDataRow) {
+      ws.addRow([]);
       const feeHdr = ws.addRow(['', 'Fees', '', '', '', mxAmountHeader, '']);
       styleSectionRow(feeHdr);
       const feeRow = ws.addRow([
@@ -242,10 +267,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       ]);
       feeRow.getCell(6).numFmt = FMT_MOEDA;
       feeRow.getCell(6).font = { bold: true };
+      styleDataRow(feeRow);
     }
 
     const lastBeforeTotalRow = ws.rowCount;
     if (lastBeforeTotalRow >= firstDataRow) {
+      ws.addRow([]);
       const gRange = lastDataRow >= firstDataRow ? `+SUM(G${firstDataRow}:G${lastDataRow})` : '';
       const totalRow = ws.addRow(['', 'TOTAL', '', '', '', { formula: `SUM(F${firstDataRow}:F${lastBeforeTotalRow})${gRange}` }, '']);
       totalRow.getCell(6).numFmt = FMT_MOEDA;
