@@ -538,12 +538,19 @@ export default function Dashboard({ params }: { params: Promise<{ pais: string }
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const res = await fetch('/api/sync', { method: 'POST' }).then(r => r.json());
-      if (res.sucesso) {
+      const resp = await fetch('/api/sync', { method: 'POST' });
+      const texto = await resp.text();
+      let res: { sucesso?: boolean; totalProcessadas?: number; novas?: number; atualizadas?: number; error?: string } | null = null;
+      try { res = JSON.parse(texto); } catch { /* resposta não-JSON (ex.: timeout da Vercel) */ }
+      if (res?.sucesso) {
         setSyncMsg(`Processadas: ${res.totalProcessadas} · Novas: ${res.novas} · Atualizadas: ${res.atualizadas}`);
         await Promise.all([loadResumos(), loadPendentes(), loadUltimaSync()]);
+      } else if (res?.error) {
+        setSyncMsg('Erro: ' + res.error);
+      } else if (resp.status === 504) {
+        setSyncMsg('O sync demorou demais e o servidor cortou (timeout). Tente de novo em instantes — o Metabase pode estar lento.');
       } else {
-        setSyncMsg('Erro: ' + (res.error || 'desconhecido'));
+        setSyncMsg(`Erro HTTP ${resp.status}: ${texto.slice(0, 120)}`);
       }
     } catch (e) {
       setSyncMsg('Erro: ' + String(e));

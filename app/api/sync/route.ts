@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { syncRemessasDoMetabase } from '@/lib/metabase';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
+// Sync completo pode passar de 60s quando o Metabase está lento (Fluid Compute
+// no plano Hobby permite até 300s)
+export const maxDuration = 300;
 
 function autorizado(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
