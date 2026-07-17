@@ -1,6 +1,7 @@
 import { query } from './db';
 import { Remessa, ItemManual, ResumoCliente, Cliente } from './types';
 import { aplicarRegras, getTaxaIntercompany, round2, carregarRegras } from './regras';
+import { formatDateIsoLocal } from './dates';
 
 // ── Moedas e câmbio (espelho de Faturamento.gs) ─────────────
 
@@ -155,7 +156,7 @@ export async function calcularResumo(pais: string): Promise<ResumoCliente[]> {
     acc.frete += vals.frete;
     if (!(pais === 'PT' && r.grupo === 'EU')) acc.imposto += vals.imposto;
     const raw: unknown = r.data;
-    const d = raw ? (raw instanceof Date ? raw.toISOString().slice(0, 10) : String(raw).slice(0, 10)) : null;
+    const d = raw ? formatDateIsoLocal(raw instanceof Date ? raw : String(raw)) : null;
     if (d) {
       if (!acc.janela_inicio || d < acc.janela_inicio) acc.janela_inicio = d;
       if (!acc.janela_fim || d > acc.janela_fim) acc.janela_fim = d;

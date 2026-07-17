@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { use } from 'react';
+import { formatDateIsoLocal, formatDatePtBR } from '@/lib/dates';
 
 type Pais = 'PT' | 'MX' | 'US' | 'CL';
 
@@ -101,15 +102,11 @@ function fmt(v: number, moeda: string) {
 }
 
 function fmtDate(s: string | null) {
-  if (!s) return '—';
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return String(s).slice(0, 10);
-  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+  return formatDatePtBR(s);
 }
 
 function today() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return formatDateIsoLocal(new Date());
 }
 
 function Janela({ inicio, fim }: { inicio: string | null; fim: string | null }) {

@@ -1,5 +1,6 @@
 import { query } from './db';
 import { inferirGrupo } from './faturamento';
+import { startOfLocalDayUtc } from './dates';
 
 // ── Config (via env vars na Vercel) ──────────────────────────
 // MB_BASE_URL, MB_USERNAME, MB_PASSWORD, MB_CARD_ID, MB_FROM_DATE
@@ -59,7 +60,7 @@ function extrairTaxValue(value: unknown): number | null {
 function isDataDentroDoCorte(value: unknown, fromDateText: string): boolean {
   if (!fromDateText) return true;
   if (!value) return false;
-  const fromDate = new Date(fromDateText + 'T00:00:00');
+  const fromDate = startOfLocalDayUtc(fromDateText);
   const date = new Date(value as string);
   if (isNaN(date.getTime())) return false;
   return date.getTime() >= fromDate.getTime();

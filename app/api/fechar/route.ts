@@ -3,6 +3,7 @@ import { query } from '@/lib/db';
 import { calcularValores, converterValorManual, isEnvioManual, isStatusRemessaVisivel, moedaPagamentoCliente } from '@/lib/faturamento';
 import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, resetCache, round2 } from '@/lib/regras';
 import type { Remessa, ItemManual, Cliente } from '@/lib/types';
+import { endOfLocalDayUtc } from '@/lib/dates';
 
 // Espelho de fecharFaturamentoCliente + montarSnapshotFaturamento_:
 // aceita data de corte — só remessas/itens com data <= corte entram na fatura.
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
   if (dataFechamento) {
     const m = String(dataFechamento).match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!m) return NextResponse.json({ error: 'Data de fechamento inválida' }, { status: 400 });
-    fechamento = new Date(`${m[1]}-${m[2]}-${m[3]}T23:59:59.999Z`);
+    fechamento = endOfLocalDayUtc(`${m[1]}-${m[2]}-${m[3]}`);
   } else {
     fechamento = new Date();
   }

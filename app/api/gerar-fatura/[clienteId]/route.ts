@@ -4,6 +4,7 @@ import { query } from '@/lib/db';
 import { calcularValores, converterValorManual, inferirGrupo, isEnvioManual, isStatusRemessaVisivel, moedaPagamentoCliente } from '@/lib/faturamento';
 import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, resetCache, round2 } from '@/lib/regras';
 import type { Remessa, ItemManual } from '@/lib/types';
+import { formatDateIsoLocal } from '@/lib/dates';
 
 // Espelho do GerarFatura.gs: Consolidado + Ajustes + Resumo (PT/US) e Consolidado único (MX)
 
@@ -12,10 +13,7 @@ function fmtMoeda(moeda: string) {
 }
 
 function fmtDateIso(d: string | null): string {
-  if (!d) return '';
-  const dt = new Date(d);
-  if (isNaN(dt.getTime())) return String(d).slice(0, 10);
-  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+  return formatDateIsoLocal(d);
 }
 
 function normalizarTipoAjuste(tipo: string | null): string {

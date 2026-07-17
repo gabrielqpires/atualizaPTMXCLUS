@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import React from 'react';
+import { formatDatePtBR } from '@/lib/dates';
 
 interface Fatura {
   fatura_id: string;
@@ -62,10 +63,7 @@ function fmt(v: number, moeda: string) {
 }
 
 function fmtDate(s: string | null) {
-  if (!s) return '—';
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return String(s).slice(0, 10);
-  return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`;
+  return formatDatePtBR(s);
 }
 
 function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClose: () => void; onReaberto: () => void }) {
