@@ -177,7 +177,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const ws = workbook.addWorksheet('Consolidado');
     ws.columns = [
       { width: 16 },
-      { width: 24 },
+      { width: 40 },
       { width: 16 },
       { width: 13 },
       { width: 18 },
@@ -215,11 +215,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
           horizontal: col >= 4 ? 'right' : (col === 1 ? 'center' : 'left'),
         };
       }
-    };
-
-    const mergeLabelAndAmount = (row: ExcelJS.Row) => {
-      ws.mergeCells(row.number, 1, row.number, 4);
-      ws.mergeCells(row.number, 5, row.number, 6);
     };
 
     const hdr = ws.addRow([
@@ -263,14 +258,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     if (taxaPct > 0 && lastBeforeFeeRow >= firstDataRow) {
       ws.addRow([]);
       const feeHdr = ws.addRow(['Fees', '', '', '', mxAmountHeader, '']);
-      mergeLabelAndAmount(feeHdr);
       styleSectionRow(feeHdr);
       const feeRow = ws.addRow([
-        `Intercompany Cross-Border Fee (${taxaPct}%)`, '', '', '',
+        '', `Intercompany Cross-Border Fee (${taxaPct}%)`, '', '',
         { formula: `(SUM(E${firstDataRow}:E${lastBeforeFeeRow})+SUM(F${firstDataRow}:F${lastDataRow}))*${taxaPct / 100}` },
         '',
       ]);
-      mergeLabelAndAmount(feeRow);
       feeRow.getCell(5).numFmt = FMT_MOEDA;
       feeRow.getCell(5).font = { bold: true };
       styleDataRow(feeRow);
@@ -281,7 +274,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       ws.addRow([]);
       const taxRange = lastDataRow >= firstDataRow ? `+SUM(F${firstDataRow}:F${lastDataRow})` : '';
       const totalRow = ws.addRow(['TOTAL', '', '', '', { formula: `SUM(E${firstDataRow}:E${lastBeforeTotalRow})${taxRange}` }, '']);
-      mergeLabelAndAmount(totalRow);
       totalRow.getCell(5).numFmt = FMT_MOEDA;
       styleSectionRow(totalRow);
     }
