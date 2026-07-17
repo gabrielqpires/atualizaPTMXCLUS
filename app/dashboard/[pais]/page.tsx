@@ -288,6 +288,17 @@ function ClienteDetail({
     await load();
   }
 
+  async function desvincular(remessaId: string, awb: string) {
+    if (!confirm(`Desvincular a remessa ${awb} deste cliente? Ela sai desta fatura e volta para "não identificadas", pra você reatribuir depois (próxima janela).`)) return;
+    const res = await fetch('/api/desvincular', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remessaId }),
+    }).then(r => r.json());
+    if (res.ok) { await load(); onFechado(); }
+    else alert('Erro: ' + (res.error || 'desconhecido'));
+  }
+
   async function fechar(dataFechamento: string | null) {
     setFecharLoading(true);
     const res = await fetch('/api/fechar', {
@@ -369,7 +380,7 @@ function ClienteDetail({
                   <tr>
                     <th>Created At</th><th>AWB</th><th>Order</th><th>Destination</th><th>Group</th>
                     <th>Weight</th><th className="amount">Billed Freight</th><th className="amount">Duties &amp; Taxes</th>
-                    <th>Tax Type</th><th>Charge Description</th><th>Status</th>
+                    <th>Tax Type</th><th>Charge Description</th><th>Status</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -386,6 +397,15 @@ function ClienteDetail({
                       <td className="text-zinc-400 text-xs">{r.imposto_tipo || '—'}</td>
                       <td className="text-xs max-w-[180px] truncate">{r.contrato_descricao || '—'}</td>
                       <td className="text-zinc-400 text-xs">{r.status || '—'}</td>
+                      <td>
+                        <button
+                          className="btn btn-danger text-xs py-0.5 px-2 whitespace-nowrap"
+                          title="Tirar esta remessa do cliente e devolver para não identificadas"
+                          onClick={() => desvincular(r.remessa_id, r.awb)}
+                        >
+                          Desvincular
+                        </button>
+                      </td>
                     </tr>
                   ))}
                   {enviosManuais.map(i => {
@@ -402,15 +422,15 @@ function ClienteDetail({
                         <td className="amount">{fmt(i.valor_imposto, moeda)}</td>
                         <td className="text-zinc-400 text-xs">{i.ddp_ddu || '—'}</td>
                         <td className="text-xs max-w-[180px] truncate">{i.descricao || '—'}</td>
-                        <td className="text-zinc-400 text-xs whitespace-nowrap">
-                          manual
-                          <button className="btn btn-danger text-xs py-0.5 px-1.5 ml-2" onClick={() => deleteItem(i.item_id)}>✕</button>
+                        <td className="text-zinc-400 text-xs">manual</td>
+                        <td>
+                          <button className="btn btn-danger text-xs py-0.5 px-2" title="Excluir item manual" onClick={() => deleteItem(i.item_id)}>Excluir</button>
                         </td>
                       </tr>
                     );
                   })}
                   {totalEnvios === 0 && (
-                    <tr><td colSpan={11} className="text-zinc-500 text-center py-4">Nenhuma remessa em aberto.</td></tr>
+                    <tr><td colSpan={12} className="text-zinc-500 text-center py-4">Nenhuma remessa em aberto.</td></tr>
                   )}
                 </tbody>
               </table>
