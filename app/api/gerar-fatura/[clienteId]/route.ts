@@ -249,10 +249,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     if (ajustes.length > 0) {
       ws.addRow([]);
-      const ajHdr = ws.addRow(['Ajustes', 'Tipo', 'Descrição', 'Data', mxAmountHeader, '']);
+      const ajHdr = ws.addRow(['Ajustes', 'Descrição', 'Tipo', 'Data', mxAmountHeader, '']);
       styleSectionRow(ajHdr);
       for (const a of ajustes) {
-        const row = ws.addRow(['', a.tipoEn, a.descricao, a.data, a.valor, '']);
+        const row = ws.addRow(['', a.descricao, a.tipoEn, a.data, a.valor, '']);
         row.getCell(5).numFmt = FMT_MOEDA;
         if (a.valor < 0) row.getCell(5).font = { color: { argb: 'FFFF4444' } };
         styleDataRow(row);
