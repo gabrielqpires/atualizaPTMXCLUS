@@ -2,10 +2,11 @@ import { query } from './db';
 import { RegraFaturamento } from './types';
 
 // Cache por execução (equivalente ao _cacheRegras do Apps Script)
-let _cache: Record<string, RegraFaturamento[]> | null = null;
+let _cache: Record<string, Record<string, RegraFaturamento[]>> = {};
 
 export async function carregarRegras(pais: string): Promise<Record<string, RegraFaturamento[]>> {
-  if (_cache) return _cache;
+  const cacheKey = String(pais || '').toUpperCase();
+  if (_cache[cacheKey]) return _cache[cacheKey];
   const rows = await query<RegraFaturamento>(
     `SELECT rf.* FROM regras_faturamento rf
      JOIN clientes c ON c.cliente_id = rf.cliente_id
@@ -16,11 +17,17 @@ export async function carregarRegras(pais: string): Promise<Record<string, Regra
     if (!mapa[r.cliente_id]) mapa[r.cliente_id] = [];
     mapa[r.cliente_id].push(r);
   }
-  _cache = mapa;
+  _cache[cacheKey] = mapa;
   return mapa;
 }
 
-export function resetCache() { _cache = null; }
+export function resetCache(pais?: string) {
+  if (pais) {
+    delete _cache[String(pais || '').toUpperCase()];
+    return;
+  }
+  _cache = {};
+}
 
 // Tabela FedEx Zone 4 — [weightKg, precoUSD]
 const FEDEX_ZONE4: [number, number][] = [

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { calcularValores, converterValorManual, inferirGrupo, isEnvioManual, moedaDoPais, normalizarMoeda } from '@/lib/faturamento';
-import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, round2 } from '@/lib/regras';
+import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, resetCache, round2 } from '@/lib/regras';
 import type { Remessa, ItemManual, FaturaFechada } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
   const numFatura = fat.num_fatura || fat.fatura_id;
   const remessaIds = String(fat.remessa_ids || '').split(',').map(s => s.trim()).filter(Boolean);
   const itemIds = String(fat.item_ids || '').split(',').map(s => s.trim()).filter(Boolean);
+  resetCache(pais);
   const regras = await carregarRegras(pais);
 
   // Espelho do Apps Script: a remessa pertence à fatura por remessa_id

@@ -66,6 +66,33 @@ function inferirGrupo(paisDestino: string | null | undefined): string {
 }
 
 const MOEDA: Record<string, string> = { PT: 'EUR', MX: 'USD', US: 'USD', CL: 'USD' };
+const ISO_COUNTRY_CODES = [
+  'AD','AE','AF','AG','AI','AL','AM','AO','AQ','AR','AS','AT','AU','AW','AX','AZ',
+  'BA','BB','BD','BE','BF','BG','BH','BI','BJ','BL','BM','BN','BO','BQ','BR','BS','BT','BV','BW','BY','BZ',
+  'CA','CC','CD','CF','CG','CH','CI','CK','CL','CM','CN','CO','CR','CU','CV','CW','CX','CY','CZ',
+  'DE','DJ','DK','DM','DO','DZ',
+  'EC','EE','EG','EH','ER','ES','ET',
+  'FI','FJ','FK','FM','FO','FR',
+  'GA','GB','GD','GE','GF','GG','GH','GI','GL','GM','GN','GP','GQ','GR','GS','GT','GU','GW','GY',
+  'HK','HM','HN','HR','HT','HU',
+  'ID','IE','IL','IM','IN','IO','IQ','IR','IS','IT',
+  'JE','JM','JO','JP',
+  'KE','KG','KH','KI','KM','KN','KP','KR','KW','KY','KZ',
+  'LA','LB','LC','LI','LK','LR','LS','LT','LU','LV','LY',
+  'MA','MC','MD','ME','MF','MG','MH','MK','ML','MM','MN','MO','MP','MQ','MR','MS','MT','MU','MV','MW','MX','MY','MZ',
+  'NA','NC','NE','NF','NG','NI','NL','NO','NP','NR','NU','NZ',
+  'OM',
+  'PA','PE','PF','PG','PH','PK','PL','PM','PN','PR','PS','PT','PW','PY',
+  'QA',
+  'RE','RO','RS','RU','RW',
+  'SA','SB','SC','SD','SE','SG','SH','SI','SJ','SK','SL','SM','SN','SO','SR','SS','ST','SV','SX','SY','SZ',
+  'TC','TD','TF','TG','TH','TJ','TK','TL','TM','TN','TO','TR','TT','TV','TW','TZ',
+  'UA','UG','UM','US','UY','UZ',
+  'VA','VC','VE','VG','VI','VN','VU',
+  'WF','WS',
+  'YE','YT',
+  'ZA','ZM','ZW',
+];
 const NOME_PAIS: Record<string, string> = { PT: 'Portugal', MX: 'México', US: 'Estados Unidos', CL: 'Chile' };
 const FLAG: Record<string, string> = { PT: '🇵🇹', MX: '🇲🇽', US: '🇺🇸', CL: '🇨🇱' };
 
@@ -184,7 +211,10 @@ function ItemManualForm({
           <div><label className="text-xs text-zinc-400 block mb-1">Data</label>
             <input type="date" value={dataEnvio} onChange={e => setDataEnvio(e.target.value)} /></div>
           <div><label className="text-xs text-zinc-400 block mb-1">País destino</label>
-            <input value={paisDestino} onChange={e => setPaisDestino(e.target.value)} placeholder="Ex: US, DE, BR" maxLength={2} /></div>
+            <select value={paisDestino} onChange={e => setPaisDestino(e.target.value)} required>
+              <option value="">ISO</option>
+              {ISO_COUNTRY_CODES.map(code => <option key={code} value={code}>{code}</option>)}
+            </select></div>
           <div><label className="text-xs text-zinc-400 block mb-1">DDP / DDU</label>
             <select value={ddpDdu} onChange={e => setDdpDdu(e.target.value)}>
               <option value="DDP">DDP (sender paga imposto)</option>

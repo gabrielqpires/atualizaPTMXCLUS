@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { query } from '@/lib/db';
-import { calcularValores, converterValorManual, isEnvioManual, isStatusRemessaVisivel, moedaPagamentoCliente } from '@/lib/faturamento';
-import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, round2 } from '@/lib/regras';
+import { calcularValores, converterValorManual, inferirGrupo, isEnvioManual, isStatusRemessaVisivel, moedaPagamentoCliente } from '@/lib/faturamento';
+import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, resetCache, round2 } from '@/lib/regras';
 import type { Remessa, ItemManual } from '@/lib/types';
 
 // Espelho do GerarFatura.gs: Consolidado + Ajustes + Resumo (PT/US) e Consolidado único (MX)
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   );
   if (!cliente) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 });
 
+  resetCache(pais);
   const regras = await carregarRegras(pais);
   const moedaFat = moedaPagamentoCliente({ moeda_pagamento: cliente.moeda_pagamento, pais });
   const FMT_MOEDA = fmtMoeda(moedaFat);
@@ -101,12 +102,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   for (const i of itensBrutos.filter(x => isEnvioManual(x))) {
     const vf = converterValorManual(i.valor_frete, i.moeda, moedaFat);
     const vi = converterValorManual(i.valor_imposto, i.moeda, moedaFat);
+    const destino = String(i.pais_destino || pais);
     linhas.push({
       data: fmtDateIso(i.data),
       awb: String(i.awb || '').trim(),
       orderId: String(i.pedido || ''),
-      destination: String(i.pais_destino || pais),
-      group: pais === 'PT' ? 'EU' : 'Non-EU',
+      destination: destino,
+      group: inferirGrupo(destino) || 'Non-EU',
       weight: 0,
       valorFrete: round2(vf),
       valorImposto: round2(vi),

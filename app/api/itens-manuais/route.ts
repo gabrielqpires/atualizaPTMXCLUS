@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
   const moeda = moedaPagamentoCliente({ moeda_pagamento: c?.moeda_pagamento, pais: resolvedPais });
   // Desconto é gravado negativo, como no Apps Script
   const envio = String(tipo || '').trim().toLowerCase() === 'envio';
+  const paisDestinoIso = String(paisDestino || '').trim().toUpperCase() || null;
   if (!envio && String(tipo || '').trim().toLowerCase() === 'desconto') {
     vf = -Math.abs(vf);
   }
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     `INSERT INTO itens_manuais (item_id,cliente_id,pais,tipo,descricao,valor_frete,valor_imposto,moeda,data,awb,pais_destino,pedido,ddp_ddu,obs,criado_em)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,now())`,
     [id, clienteId, resolvedPais, tipo, descricao || null, vf, vi,
-     moeda, data, awb || null, paisDestino || null, pedido || null, ddpDdu || null, obs || null]
+     moeda, data, awb || null, paisDestinoIso, pedido || null, ddpDdu || null, obs || null]
   );
   return NextResponse.json({ ok: true, id });
 }
