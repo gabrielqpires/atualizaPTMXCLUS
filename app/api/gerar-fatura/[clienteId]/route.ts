@@ -176,10 +176,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     // ── Formato compacto: MX e Parcel US, layout original aprovado ──
     const ws = workbook.addWorksheet('Consolidado');
     ws.columns = [
-      { width: 4 },
-      { width: 48 },
+      { width: 16 },
       { width: 24 },
-      { width: 14 },
+      { width: 16 },
       { width: 13 },
       { width: 18 },
       { width: 18 },
@@ -193,34 +192,34 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
       right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
     };
-    const mxAmountHeader = `Amount (${moedaFat})`;
+    const mxAmountHeader = `Valor (${moedaFat})`;
 
     const styleSectionRow = (row: ExcelJS.Row) => {
       row.height = 24;
-      for (let col = 1; col <= 7; col++) {
+      for (let col = 1; col <= 6; col++) {
         const cell = row.getCell(col);
         cell.fill = blueFill;
         cell.font = whiteBold;
-        cell.alignment = { vertical: 'middle', horizontal: col >= 5 ? 'right' : 'left' };
+        cell.alignment = { vertical: 'middle', horizontal: col >= 4 ? 'right' : 'left' };
         cell.border = lightBorder;
       }
     };
 
     const styleDataRow = (row: ExcelJS.Row) => {
       row.height = 20;
-      for (let col = 1; col <= 7; col++) {
+      for (let col = 1; col <= 6; col++) {
         const cell = row.getCell(col);
         cell.border = lightBorder;
         cell.alignment = {
           vertical: 'middle',
-          horizontal: col >= 5 ? 'right' : (col === 4 ? 'center' : 'left'),
+          horizontal: col >= 4 ? 'right' : (col === 1 ? 'center' : 'left'),
         };
       }
     };
 
     const hdr = ws.addRow([
-      '', 'Description', 'AWB', 'Date', 'Weight (kg)',
-      `Freight (${moedaFat})`, `Duties (${moedaFat})`,
+      'Created At', 'AWB', 'Destination', 'Peso',
+      `Valor Frete (${moedaFat})`, `Valor Imposto (${moedaFat})`,
     ]);
     styleSectionRow(hdr);
     ws.views = [{ state: 'frozen', ySplit: 1 }];
@@ -229,15 +228,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     for (const l of linhas) {
       const row = ws.addRow([
-        '', l.description || l.chargeDescription || l.awb || '',
-        l.awb,
         l.data,
+        l.awb,
+        l.destination,
         l.weight || '',
         l.valorFrete,
         l.valorImposto,
       ]);
+      row.getCell(5).numFmt = FMT_MOEDA;
       row.getCell(6).numFmt = FMT_MOEDA;
-      row.getCell(7).numFmt = FMT_MOEDA;
       styleDataRow(row);
     }
 
@@ -245,12 +244,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     if (ajustes.length > 0) {
       ws.addRow([]);
-      const ajHdr = ws.addRow(['', 'Manual Adjustments', 'Description', 'Date', '', mxAmountHeader, '']);
+      const ajHdr = ws.addRow(['Ajustes', 'Tipo', 'Descrição', 'Data', mxAmountHeader, '']);
       styleSectionRow(ajHdr);
       for (const a of ajustes) {
-        const row = ws.addRow(['', a.tipoEn, a.descricao, a.data, '', a.valor, '']);
-        row.getCell(6).numFmt = FMT_MOEDA;
-        if (a.valor < 0) row.getCell(6).font = { color: { argb: 'FFFF4444' } };
+        const row = ws.addRow(['', a.tipoEn, a.descricao, a.data, a.valor, '']);
+        row.getCell(5).numFmt = FMT_MOEDA;
+        if (a.valor < 0) row.getCell(5).font = { color: { argb: 'FFFF4444' } };
         styleDataRow(row);
       }
     }
@@ -258,24 +257,24 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const lastBeforeFeeRow = ws.rowCount;
     if (taxaPct > 0 && lastBeforeFeeRow >= firstDataRow) {
       ws.addRow([]);
-      const feeHdr = ws.addRow(['', 'Fees', '', '', '', mxAmountHeader, '']);
+      const feeHdr = ws.addRow(['Fees', '', '', '', mxAmountHeader, '']);
       styleSectionRow(feeHdr);
       const feeRow = ws.addRow([
-        '', `Intercompany Cross-Border Fee (${taxaPct}%)`, '', '', '',
-        { formula: `(SUM(F${firstDataRow}:F${lastBeforeFeeRow})+SUM(G${firstDataRow}:G${lastDataRow}))*${taxaPct / 100}` },
+        '', `Intercompany Cross-Border Fee (${taxaPct}%)`, '', '',
+        { formula: `(SUM(E${firstDataRow}:E${lastBeforeFeeRow})+SUM(F${firstDataRow}:F${lastDataRow}))*${taxaPct / 100}` },
         '',
       ]);
-      feeRow.getCell(6).numFmt = FMT_MOEDA;
-      feeRow.getCell(6).font = { bold: true };
+      feeRow.getCell(5).numFmt = FMT_MOEDA;
+      feeRow.getCell(5).font = { bold: true };
       styleDataRow(feeRow);
     }
 
     const lastBeforeTotalRow = ws.rowCount;
     if (lastBeforeTotalRow >= firstDataRow) {
       ws.addRow([]);
-      const gRange = lastDataRow >= firstDataRow ? `+SUM(G${firstDataRow}:G${lastDataRow})` : '';
-      const totalRow = ws.addRow(['', 'TOTAL', '', '', '', { formula: `SUM(F${firstDataRow}:F${lastBeforeTotalRow})${gRange}` }, '']);
-      totalRow.getCell(6).numFmt = FMT_MOEDA;
+      const taxRange = lastDataRow >= firstDataRow ? `+SUM(F${firstDataRow}:F${lastDataRow})` : '';
+      const totalRow = ws.addRow(['TOTAL', '', '', '', { formula: `SUM(E${firstDataRow}:E${lastBeforeTotalRow})${taxRange}` }, '']);
+      totalRow.getCell(5).numFmt = FMT_MOEDA;
       styleSectionRow(totalRow);
     }
   } else {
