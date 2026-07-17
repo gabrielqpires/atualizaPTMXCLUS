@@ -75,6 +75,12 @@ function inferirPaisPorContrato(descricao: unknown): string {
   return '';
 }
 
+const EMAIL_PAIS_FALLBACK: Record<string, string> = {
+  'paulo@uscloser.com': 'US',
+  'exclusive.leather.authentic@gmail.com': 'US',
+  'ecomops+schutz@arezzousa.com': 'US',
+};
+
 // ── Auth + fetch ─────────────────────────────────────────────
 let _tokenCache: { token: string; exp: number } | null = null;
 
@@ -130,10 +136,12 @@ function montarRemessas(linhas: Record<string, unknown>[]): RemessaMB[] {
     ]) || '');
     const taxValue = extrairTaxValue(pick(row, ['imposto_detalhes', 'impostos_detalhes', 'ImpostosDetalhes', 'tax_value_details']));
     const destination = String(pick(row, ['pais_destinatario', 'destination', 'Destination']) || '');
+    const email = normalizarEmail(pick(row, ['email', 'EmailUsuario', 'usuario_email']));
+    const paisContrato = inferirPaisPorContrato(contratoDescricao);
     return {
       remessaId: String(pick(row, ['remessa_id', 'RemessaID', 'id']) || ''),
       awb: String(pick(row, ['awb', 'AWB']) || ''),
-      email: normalizarEmail(pick(row, ['email', 'EmailUsuario', 'usuario_email'])),
+      email,
       freteUsd: parseNumber(pick(row, ['Cotacoes Transportadores - Codigo__frete', 'frete_usd', 'FreteUSD'])),
       impostoOriginal: taxValue !== null ? taxValue : parseNumber(pick(row, ['impostos_final', 'ImpostoOriginal', 'imposto_original'])),
       impostoEur: parseNumber(pick(row, ['impostos_final_eur', 'ImpostoEUR', 'impostos_eur'])),
@@ -144,7 +152,7 @@ function montarRemessas(linhas: Record<string, unknown>[]): RemessaMB[] {
       operacaoFaturavel: toBoolean(pick(row, ['is_operacao_faturavel', 'OperacaoFaturavel'])),
       data: String(pick(row, ['created_at', 'Data', 'data']) || ''),
       contratoDescricao,
-      pais: inferirPaisPorContrato(contratoDescricao),
+      pais: EMAIL_PAIS_FALLBACK[email] || paisContrato,
       tms: toBoolean(pick(row, ['tms', 'TMS'])),
       mor: toBoolean(pick(row, ['mor', 'MOR'])),
       orderId: String(pick(row, ['order_id', 'OrderID', 'order', 'Order', 'pedido']) || ''),
@@ -179,6 +187,7 @@ function resolverCliente(
   const cand = mapa[email];
   if (!cand || !cand.length) return null;
   if (cand.length === 1) return cand[0];
+  if (!pais) return null;
   const exato = cand.filter(c => c.pais === pais);
   return exato.length ? exato[0] : cand[0];
 }
@@ -210,7 +219,7 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
     const tuples: string[] = [];
     slice.forEach((r, idx) => {
       const match = resolverCliente(mapaEmail, r.email, r.pais);
-      const pais = r.pais || (match ? match.pais : '');
+      const pais = match ? match.pais : (r.pais || '');
       if (r.pais) comPaisContrato++;
       if (match) comClienteEncontrado++;
       if (existSet.has(r.remessaId)) atualizadas++; else novas++;
@@ -255,7 +264,11 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
         destination = EXCLUDED.destination,
         grupo = EXCLUDED.grupo,
         cliente_id = COALESCE(EXCLUDED.cliente_id, remessas.cliente_id),
-        pais = COALESCE(NULLIF(remessas.pais,''), EXCLUDED.pais)`,
+        pais = COALESCE(
+          (SELECT c.pais FROM clientes c WHERE c.cliente_id = COALESCE(EXCLUDED.cliente_id, remessas.cliente_id)),
+          NULLIF(EXCLUDED.pais,''),
+          NULLIF(remessas.pais,'')
+        )`,
       values
     );
   }

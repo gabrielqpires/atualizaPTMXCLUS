@@ -75,6 +75,7 @@ async function atribuirRemessasPorEmails(
             tms = tms OR $3,
             mor = mor OR $4
       WHERE cliente_id IS NULL
+        AND num_fatura IS NULL
         AND lower(coalesce(email_usuario, '')) = ANY($5::text[])
       RETURNING remessa_id`,
     [clienteId, pais, tms, mor, emails]
