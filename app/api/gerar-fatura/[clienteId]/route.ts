@@ -31,6 +31,10 @@ const TIPO_EN: Record<string, string> = {
 const PRETO = 'FF000000';
 const BRANCO = 'FFFFFFFF';
 
+function usarLayoutCompacto(pais: string, nomeCliente: string): boolean {
+  return pais === 'MX' || (pais === 'US' && /\bparcel\b/i.test(nomeCliente));
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ clienteId: string }> }) {
   const { clienteId } = await params;
   const pais = (req.nextUrl.searchParams.get('pais') || 'PT').toUpperCase();
@@ -78,7 +82,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   interface LinhaConsolidado {
     data: string; awb: string; orderId: string; destination: string; group: string;
     weight: number; valorFrete: number; valorImposto: number;
-    chargeDescription: string; source: string;
+    chargeDescription: string; source: string; description: string;
   }
   const linhas: LinhaConsolidado[] = workItems.map(({ r, valores }) => {
     const orderId = String(r.order_id || '');
@@ -93,6 +97,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       valorImposto: round2(valores.imposto),
       chargeDescription: orderId.toLowerCase().includes('return') ? 'Return - Freight' : 'Freight',
       source: 'tech',
+      description: String(r.contrato_descricao || r.awb || ''),
     };
   });
 
@@ -112,6 +117,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       valorImposto: round2(vi),
       chargeDescription: 'Freight',
       source: 'manual',
+      description: String(i.descricao || 'Manual shipment'),
     });
   }
 
@@ -166,21 +172,58 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     }
   }
 
-  if (pais === 'MX') {
-    // ── Formato MX: aba única, layout aprovado (seções Manual Adjustments e Fees) ──
+  if (usarLayoutCompacto(pais, cliente.nome)) {
+    // ── Formato compacto: MX e Parcel US, layout original aprovado ──
     const ws = workbook.addWorksheet('Consolidado');
-    preencherConsolidado(ws);
-    const firstDataRow = 2;
+    ws.columns = [
+      { width: 5 },
+      { width: 35 },
+      { width: 18 },
+      { width: 12 },
+      { width: 10 },
+      { width: 16 },
+      { width: 16 },
+    ];
+
+    const blueFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+    const whiteBold: Partial<ExcelJS.Font> = { bold: true, color: { argb: BRANCO } };
+    const mxAmountHeader = `Amount (${moedaFat})`;
+
+    const styleSectionRow = (row: ExcelJS.Row) => {
+      row.eachCell(c => {
+        if (c.value) {
+          c.fill = blueFill;
+          c.font = whiteBold;
+        }
+      });
+    };
+
+    const hdr = ws.addRow([
+      '', 'Description', 'AWB', 'Date', 'Weight (kg)',
+      `Freight (${moedaFat})`, `Duties (${moedaFat})`,
+    ]);
+    styleSectionRow(hdr);
+
+    const firstDataRow = ws.rowCount + 1;
+
+    for (const l of linhas) {
+      const row = ws.addRow([
+        '', l.description || l.chargeDescription || l.awb || '',
+        l.awb,
+        l.data,
+        l.weight || '',
+        l.valorFrete,
+        l.valorImposto,
+      ]);
+      row.getCell(6).numFmt = FMT_MOEDA;
+      row.getCell(7).numFmt = FMT_MOEDA;
+    }
+
     const lastDataRow = ws.rowCount;
 
     if (ajustes.length > 0) {
-      const ajHdr = ws.addRow(['', 'Manual Adjustments', 'Description', 'Date', '', 'Amount', '']);
-      ajHdr.eachCell(c => {
-        if (c.value) {
-          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
-          c.font = { bold: true, color: { argb: BRANCO } };
-        }
-      });
+      const ajHdr = ws.addRow(['', 'Manual Adjustments', 'Description', 'Date', '', mxAmountHeader, '']);
+      styleSectionRow(ajHdr);
       for (const a of ajustes) {
         const row = ws.addRow(['', a.tipoEn, a.descricao, a.data, '', a.valor, '']);
         row.getCell(6).numFmt = FMT_MOEDA;
@@ -190,13 +233,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     const lastBeforeFeeRow = ws.rowCount;
     if (taxaPct > 0 && lastBeforeFeeRow >= firstDataRow) {
-      const feeHdr = ws.addRow(['', 'Fees', '', '', '', 'Amount', '']);
-      feeHdr.eachCell(c => {
-        if (c.value) {
-          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
-          c.font = { bold: true, color: { argb: BRANCO } };
-        }
-      });
+      const feeHdr = ws.addRow(['', 'Fees', '', '', '', mxAmountHeader, '']);
+      styleSectionRow(feeHdr);
       const feeRow = ws.addRow([
         '', `Intercompany Cross-Border Fee (${taxaPct}%)`, '', '', '',
         { formula: `(SUM(F${firstDataRow}:F${lastBeforeFeeRow})+SUM(G${firstDataRow}:G${lastDataRow}))*${taxaPct / 100}` },
@@ -211,12 +249,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       const gRange = lastDataRow >= firstDataRow ? `+SUM(G${firstDataRow}:G${lastDataRow})` : '';
       const totalRow = ws.addRow(['', 'TOTAL', '', '', '', { formula: `SUM(F${firstDataRow}:F${lastBeforeTotalRow})${gRange}` }, '']);
       totalRow.getCell(6).numFmt = FMT_MOEDA;
-      totalRow.eachCell(c => {
-        if (c.value) {
-          c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
-          c.font = { bold: true, color: { argb: BRANCO } };
-        }
-      });
+      styleSectionRow(totalRow);
     }
   } else {
     // ── Formato PT/US: Consolidado + Ajustes + Resumo (espelho do GerarFatura.gs) ──
