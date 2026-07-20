@@ -259,6 +259,7 @@ function ClienteDetail({
   const [fecharLoading, setFecharLoading] = useState(false);
   const [showFecharModal, setShowFecharModal] = useState(false);
   const [dataCorte, setDataCorte] = useState('');
+  const [odooBusy, setOdooBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -288,6 +289,30 @@ function ClienteDetail({
     }).then(r => r.json());
     if (res.ok) { await load(); onFechado(); }
     else alert('Erro: ' + (res.error || 'desconhecido'));
+  }
+
+  async function criarOdoo(remessaId: string, awb: string, nome?: string) {
+    if (!nome && !confirm(`Enviar a remessa ${awb} ao Odoo e remover desta fatura em andamento?`)) return;
+    setOdooBusy(remessaId);
+    const res = await fetch('/api/odoo/criar-ar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remessaId, nome }),
+    }).then(r => r.json());
+    setOdooBusy(null);
+    if (res.needsName) {
+      const n = window.prompt(`Cliente nao cadastrado no Odoo${res.email ? ` (${res.email})` : ''}.\nDigite o nome do cliente para criar o cadastro:`);
+      if (n && n.trim()) return criarOdoo(remessaId, awb, n.trim());
+      return;
+    }
+    if (res.ok) {
+      await load();
+      onFechado();
+      const avisoLocal = res.resolvidoLocalmente === false ? '\nAtencao: criou no Odoo, mas nao consegui remover da fatura em andamento automaticamente.' : '';
+      alert(`Conta a receber criada e liquidada no Odoo OK\nFatura ${res.numero} - total ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || moeda || 'MXN' }).format(res.total)} (${res.pagamento})${avisoLocal}`);
+    } else {
+      alert('Erro Odoo: ' + (res.error || 'desconhecido'));
+    }
   }
 
   async function fechar(dataFechamento: string | null) {
@@ -389,6 +414,16 @@ function ClienteDetail({
                       <td className="text-xs max-w-[180px] truncate">{r.contrato_descricao || '—'}</td>
                       <td className="text-zinc-400 text-xs">{r.status || '—'}</td>
                       <td>
+                        {pais === 'MX' && (
+                          <button
+                            className="btn text-xs py-0.5 px-2 whitespace-nowrap mr-1"
+                            disabled={odooBusy === r.remessa_id}
+                            title="Criar conta a receber no Odoo e remover desta fatura em andamento"
+                            onClick={() => criarOdoo(r.remessa_id, r.awb)}
+                          >
+                            {odooBusy === r.remessa_id ? '...' : '+ Odoo'}
+                          </button>
+                        )}
                         <button
                           className="btn btn-danger text-xs py-0.5 px-2 whitespace-nowrap"
                           title="Tirar esta remessa do cliente e devolver para não identificadas"

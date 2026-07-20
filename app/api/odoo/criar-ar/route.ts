@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
-import { calcularValores, moedaDoPais } from '@/lib/faturamento';
+import { calcularValores, isStatusRemessaVisivel, moedaDoPais, moedaPagamentoCliente } from '@/lib/faturamento';
 import { execKw, odooConfigurado } from '@/lib/odoo';
-import { round2 } from '@/lib/regras';
-import type { Remessa } from '@/lib/types';
+import { aplicarMediaFrete, aplicarRegras, carregarRegras, resetCache, round2 } from '@/lib/regras';
+import type { Cliente, Remessa } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +28,48 @@ type OdooMoveLineRead = {
 
 function relId(value: OdooRel | undefined): number | null {
   return Array.isArray(value) ? value[0] : null;
+}
+
+function primeiroEmail(...values: Array<string | null | undefined>): string {
+  return values
+    .join(' ')
+    .split(/[;,\s]+/)
+    .map(v => v.trim().toLowerCase())
+    .find(v => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) || '';
+}
+
+async function valoresParaRemessa(r: Remessa, cliente: Cliente | null, pais: string) {
+  if (!cliente) {
+    const moeda = moedaDoPais(pais);
+    const vals = calcularValores(r.frete_usd, r.imposto_original, r.moeda_cotacao, moeda, r.imposto_eur, r.imposto_tipo);
+    return { moeda, frete: round2(vals.frete), imposto: round2(vals.imposto) };
+  }
+
+  const moeda = moedaPagamentoCliente(cliente);
+  resetCache(pais);
+  const regras = await carregarRegras(pais);
+  const rowsAll = await query<Remessa>(
+    `SELECT * FROM remessas WHERE cliente_id=$1 AND operacao_faturavel=true AND num_fatura IS NULL`,
+    [cliente.cliente_id],
+  );
+  const rows = rowsAll.filter(x => isStatusRemessaVisivel(x.status_codigo, x.status));
+  const workItems = rows.map(row => {
+    const ctx = {
+      clienteId: row.cliente_id,
+      weightKg: row.weight || 0,
+      paisOrigem: pais,
+      paisDestino: row.destination || '',
+      contratoDescricao: row.contrato_descricao || '',
+    };
+    const raw = calcularValores(row.frete_usd, row.imposto_original, row.moeda_cotacao, moeda, row.imposto_eur, row.imposto_tipo);
+    const ruled = aplicarRegras(raw, ctx, regras);
+    return { r: row, valores: { frete: ruled.frete, imposto: ruled.imposto }, contexto: ctx };
+  });
+  if (workItems.length > 0) aplicarMediaFrete(cliente.cliente_id, workItems, regras);
+
+  const item = workItems.find(x => x.r.remessa_id === r.remessa_id);
+  if (!item) throw new Error('Remessa nao esta ativa na fatura em andamento deste cliente.');
+  return { moeda, frete: round2(item.valores.frete), imposto: round2(item.valores.imposto) };
 }
 
 async function registrarPagamentoStripe(invoiceId: number, companyId: number, partnerId: number, data: string): Promise<number | null> {
@@ -105,19 +147,24 @@ export async function POST(req: NextRequest) {
   const [r] = await query<Remessa>(`SELECT * FROM remessas WHERE remessa_id=$1`, [remessaId]);
   if (!r) return NextResponse.json({ error: 'Remessa não encontrada' }, { status: 404 });
 
-  const pais = String(r.pais || '').toUpperCase();
+  if (r.num_fatura) return NextResponse.json({ error: 'Remessa ja pertence a uma fatura fechada.' }, { status: 400 });
+  if (!r.operacao_faturavel) return NextResponse.json({ error: 'Remessa nao esta faturavel no painel.' }, { status: 400 });
+
+  const [cliente] = r.cliente_id
+    ? await query<Cliente>(`SELECT * FROM clientes WHERE cliente_id=$1`, [r.cliente_id])
+    : [null];
+  const pais = String(cliente?.pais || r.pais || '').toUpperCase();
   const companyId = COMPANY_BY_PAIS[pais];
   if (!companyId) return NextResponse.json({ error: `Sem empresa Odoo para o país ${pais || '(vazio)'} (por enquanto só MX).` }, { status: 400 });
 
-  const moeda = moedaDoPais(pais); // MXN
-  const vals = calcularValores(r.frete_usd, r.imposto_original, r.moeda_cotacao, moeda, r.imposto_eur, r.imposto_tipo);
-  const frete = round2(vals.frete);
-  const imposto = round2(vals.imposto);
+  const { moeda, frete, imposto } = await valoresParaRemessa(r, cliente, pais);
   if (frete <= 0 && imposto <= 0) {
     return NextResponse.json({ error: 'Remessa sem valor a faturar.' }, { status: 400 });
   }
 
-  const email = String(r.email_usuario || '').trim().toLowerCase();
+  const email = cliente
+    ? (primeiroEmail(cliente.emails_contato, cliente.emails_usuario) || String(r.email_usuario || '').trim().toLowerCase())
+    : String(r.email_usuario || '').trim().toLowerCase();
   const ctx = { allowed_company_ids: [companyId], company_id: companyId };
 
   try {
@@ -127,13 +174,17 @@ export async function POST(req: NextRequest) {
       const found = await execKw<number[]>('res.partner', 'search', [[['email', '=', email]]], { limit: 1 });
       if (found.length) partnerId = found[0];
     }
+    if (!partnerId && cliente?.nome) {
+      const found = await execKw<number[]>('res.partner', 'search', [[['name', '=', cliente.nome]]], { limit: 1 });
+      if (found.length) partnerId = found[0];
+    }
     if (!partnerId) {
-      if (!nome) {
+      if (!cliente && !nome) {
         // UI abre a caixinha pedindo o nome
         return NextResponse.json({ needsName: true, email });
       }
       partnerId = await execKw<number>('res.partner', 'create', [{
-        name: String(nome).trim(),
+        name: String(cliente?.nome || nome).trim(),
         email: email || false,
         customer_rank: 1,
       }]);
@@ -170,7 +221,7 @@ export async function POST(req: NextRequest) {
       const resolvidas = await query<{ remessa_id: string }>(
         `UPDATE remessas
          SET operacao_faturavel=false, gateway_pagamento=$1
-         WHERE remessa_id=$2 AND cliente_id IS NULL
+         WHERE remessa_id=$2 AND num_fatura IS NULL
          RETURNING remessa_id`,
         ['odoo_stripe', remessaId]
       );
