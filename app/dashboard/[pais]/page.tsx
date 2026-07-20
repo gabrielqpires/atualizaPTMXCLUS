@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { use } from 'react';
 import { formatDateIsoLocal, formatDatePtBR } from '@/lib/dates';
+import { inferirGrupo } from '@/lib/grupo';
 
 type Pais = 'PT' | 'MX' | 'US' | 'CL';
 
@@ -57,13 +58,6 @@ interface ItemManual {
 
 function isEnvioManual(item: ItemManual): boolean {
   return (item.tipo || '').toLowerCase() === 'envio' || !!item.awb;
-}
-
-const EU_COUNTRIES = new Set(['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GR','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK']);
-
-function inferirGrupo(paisDestino: string | null | undefined): string {
-  if (!paisDestino) return '';
-  return EU_COUNTRIES.has(paisDestino.toUpperCase().trim()) ? 'EU' : 'Non-EU';
 }
 
 const MOEDA: Record<string, string> = { PT: 'EUR', MX: 'USD', US: 'USD', CL: 'USD' };

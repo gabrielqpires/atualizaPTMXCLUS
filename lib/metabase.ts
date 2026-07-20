@@ -144,6 +144,7 @@ function montarRemessas(linhas: Record<string, unknown>[]): RemessaMB[] {
     ]) || '');
     const taxValue = extrairTaxValue(pick(row, ['imposto_detalhes', 'impostos_detalhes', 'ImpostosDetalhes', 'tax_value_details']));
     const destination = String(pick(row, ['pais_destinatario', 'destination', 'Destination']) || '');
+    const groupRaw = pick(row, ['destino_bloco_eu', 'destino_bloco', 'Group', 'group']);
     const email = normalizarEmail(pick(row, ['email', 'EmailUsuario', 'usuario_email']));
     const paisContrato = inferirPaisPorContrato(contratoDescricao);
     return {
@@ -166,7 +167,7 @@ function montarRemessas(linhas: Record<string, unknown>[]): RemessaMB[] {
       orderId: String(pick(row, ['order_id', 'OrderID', 'order', 'Order', 'pedido']) || ''),
       weight: parseNumber(pick(row, ['peso_valor', 'weight', 'Weight', 'peso', 'peso_kg'])),
       destination,
-      group: inferirGrupo(String(pick(row, ['destino_bloco_eu', 'destino_bloco', 'Group', 'group']) || '') || destination),
+      group: inferirGrupo(destination || groupRaw),
     };
   }).filter(r => r.remessaId && isDataDentroDoCorte(r.data, fromDate));
 }

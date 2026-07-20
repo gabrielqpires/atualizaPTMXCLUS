@@ -2,6 +2,7 @@ import { query } from './db';
 import { Remessa, ItemManual, ResumoCliente, Cliente } from './types';
 import { aplicarRegras, getTaxaIntercompany, round2, carregarRegras } from './regras';
 import { formatDateIsoLocal } from './dates';
+export { inferirGrupo } from './grupo';
 
 // ── Moedas e câmbio (espelho de Faturamento.gs) ─────────────
 
@@ -88,13 +89,6 @@ export function isStatusRemessaVisivel(
 export function isEnvioManual(item: ItemManual): boolean {
   const tipo = (item.tipo || '').toLowerCase();
   return tipo === 'envio' || !!item.awb;
-}
-
-const EU_COUNTRIES = new Set(['AT','BE','BG','CY','CZ','DE','DK','EE','ES','FI','FR','GR','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK']);
-
-export function inferirGrupo(paisDestino: string | null | undefined): string {
-  if (!paisDestino) return '';
-  return EU_COUNTRIES.has(paisDestino.toUpperCase().trim()) ? 'EU' : 'Non-EU';
 }
 
 export function converterValorManual(valor: number | null, moedaItem: string, moedaFat: string): number {
