@@ -85,6 +85,28 @@ function PendentesInner() {
     else alert('Erro: ' + (res.error || 'desconhecido'));
   }
 
+  // Cria conta a receber no Odoo (+ liquidação no Stripe). Se o parceiro não
+  // existir, abre uma caixinha pedindo o nome e cria o cadastro (e-mail = do user).
+  async function criarOdoo(remessaId: string, nome?: string) {
+    setBusy('odoo-' + remessaId);
+    const res = await fetch('/api/odoo/criar-ar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remessaId, nome }),
+    }).then(r => r.json());
+    setBusy(null);
+    if (res.needsName) {
+      const n = window.prompt(`Cliente não cadastrado no Odoo${res.email ? ` (${res.email})` : ''}.\nDigite o nome do cliente para criar o cadastro:`);
+      if (n && n.trim()) return criarOdoo(remessaId, n.trim());
+      return;
+    }
+    if (res.ok) {
+      alert(`Conta a receber criada e liquidada no Odoo ✓\nFatura ${res.numero} — total ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || 'MXN' }).format(res.total)} (${res.pagamento})`);
+    } else {
+      alert('Erro Odoo: ' + (res.error || 'desconhecido'));
+    }
+  }
+
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-2">
@@ -127,6 +149,7 @@ function PendentesInner() {
                 <th>Atribuir</th>
                 <th></th>
                 <th></th>
+                {pais === 'MX' && <th>Odoo</th>}
               </tr>
             </thead>
             <tbody>
@@ -158,10 +181,22 @@ function PendentesInner() {
                   <td>
                     <button className="btn btn-danger text-xs" disabled={busy === r.awb} onClick={() => ignorar(r.awb)} title="Ignorar esta remessa">Ignorar</button>
                   </td>
+                  {pais === 'MX' && (
+                    <td>
+                      <button
+                        className="btn text-xs whitespace-nowrap"
+                        disabled={busy === 'odoo-' + r.remessa_id}
+                        onClick={() => criarOdoo(r.remessa_id)}
+                        title="Criar conta a receber no Odoo e liquidar no Stripe"
+                      >
+                        {busy === 'odoo-' + r.remessa_id ? '...' : '+ Odoo'}
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={11} className="text-zinc-500 text-center py-6">Nenhuma remessa pendente.</td></tr>
+                <tr><td colSpan={pais === 'MX' ? 12 : 11} className="text-zinc-500 text-center py-6">Nenhuma remessa pendente.</td></tr>
               )}
             </tbody>
           </table>
