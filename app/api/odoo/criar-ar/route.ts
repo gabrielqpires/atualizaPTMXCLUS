@@ -9,8 +9,89 @@ export const dynamic = 'force-dynamic';
 
 // Mapa país → company_id do Odoo. Por enquanto SÓ MX.
 const COMPANY_BY_PAIS: Record<string, number> = { MX: 2 };
-const STRIPE_JOURNAL_ID = 26; // diário Stripe da empresa MX
+const STRIPE_JOURNAL_ID = 26; // diario Stripe da empresa MX
+type OdooRel = [number, string] | false;
+type OdooInvoiceRead = {
+  id?: number;
+  name?: string;
+  amount_residual?: number;
+  partner_id?: OdooRel;
+};
+type OdooJournalRead = {
+  default_account_id?: OdooRel;
+};
+type OdooMoveLineRead = {
+  id: number;
+  account_id?: OdooRel;
+  partner_id?: OdooRel;
+};
 
+function relId(value: OdooRel | undefined): number | null {
+  return Array.isArray(value) ? value[0] : null;
+}
+
+async function registrarPagamentoStripe(invoiceId: number, companyId: number, partnerId: number, data: string): Promise<number | null> {
+  const ctx = { allowed_company_ids: [companyId], company_id: companyId };
+  const [invoice] = await execKw<OdooInvoiceRead[]>('account.move', 'read', [[invoiceId]], {
+    fields: ['id', 'name', 'amount_residual', 'partner_id'],
+    context: ctx,
+  });
+  const amount = round2(Number(invoice?.amount_residual || 0));
+  if (amount <= 0) return null;
+
+  const [journal] = await execKw<OdooJournalRead[]>('account.journal', 'read', [[STRIPE_JOURNAL_ID]], {
+    fields: ['default_account_id'],
+    context: ctx,
+  });
+  const stripeAccountId = relId(journal?.default_account_id);
+  if (!stripeAccountId) throw new Error('Diario Stripe sem conta padrao configurada.');
+
+  const [invoiceReceivable] = await execKw<OdooMoveLineRead[]>('account.move.line', 'search_read', [[
+    ['move_id', '=', invoiceId],
+    ['account_type', '=', 'asset_receivable'],
+    ['amount_residual', '>', 0],
+  ]], {
+    fields: ['id', 'account_id', 'partner_id'],
+    limit: 1,
+    context: ctx,
+  });
+  const receivableAccountId = relId(invoiceReceivable?.account_id);
+  if (!invoiceReceivable || !receivableAccountId) {
+    throw new Error('Linha a receber da fatura nao encontrada para reconciliar.');
+  }
+
+  const invoicePartnerId = relId(invoice?.partner_id) || relId(invoiceReceivable.partner_id) || partnerId;
+  const label = `Stripe payment ${invoice?.name || invoiceId}`;
+  const paymentMoveId = await execKw<number>('account.move', 'create', [{
+    move_type: 'entry',
+    company_id: companyId,
+    journal_id: STRIPE_JOURNAL_ID,
+    date: data,
+    ref: label,
+    line_ids: [
+      [0, 0, { name: label, account_id: stripeAccountId, partner_id: invoicePartnerId, debit: amount, credit: 0 }],
+      [0, 0, { name: label, account_id: receivableAccountId, partner_id: invoicePartnerId, debit: 0, credit: amount }],
+    ],
+  }], { context: ctx });
+
+  await execKw('account.move', 'action_post', [[paymentMoveId]], { context: ctx });
+
+  const [paymentReceivable] = await execKw<OdooMoveLineRead[]>('account.move.line', 'search_read', [[
+    ['move_id', '=', paymentMoveId],
+    ['account_id', '=', receivableAccountId],
+    ['credit', '>', 0],
+  ]], {
+    fields: ['id', 'account_id', 'partner_id'],
+    limit: 1,
+    context: ctx,
+  });
+  if (!paymentReceivable) {
+    throw new Error('Linha do pagamento Stripe nao encontrada para reconciliar.');
+  }
+
+  await execKw('account.move.line', 'reconcile', [[invoiceReceivable.id, paymentReceivable.id]], { context: ctx });
+  return paymentMoveId;
+}
 // Cria uma conta a receber (fatura de cliente) no Odoo com 2 linhas (Freight +
 // Duties & Taxes, sem imposto do Odoo) e já registra o pagamento no diário Stripe.
 // Se o parceiro (por e-mail) não existir e não vier `nome`, responde needsName.
@@ -76,14 +157,8 @@ export async function POST(req: NextRequest) {
     // 3) Postar (vira a conta a receber de fato)
     await execKw('account.move', 'action_post', [[invoiceId]], { context: ctx });
 
-    // 4) Registrar pagamento (liquidação) no diário Stripe — valor cheio
-    const wizId = await execKw<number>('account.payment.register', 'create', [{
-      payment_date: hoje,
-      journal_id: STRIPE_JOURNAL_ID,
-    }], { context: { ...ctx, active_model: 'account.move', active_ids: [invoiceId] } });
-    await execKw('account.payment.register', 'action_create_payments', [[wizId]], {
-      context: { ...ctx, active_model: 'account.move', active_ids: [invoiceId] },
-    });
+    // 4) Lancar recebimento no diario Stripe e reconciliar a conta a receber.
+    const paymentMoveId = await registrarPagamentoStripe(invoiceId, companyId, partnerId, hoje);
 
     // 5) Ler número e status final
     const [mv] = await execKw<Array<{ name: string; amount_total: number; payment_state: string }>>(
@@ -110,6 +185,7 @@ export async function POST(req: NextRequest) {
       numero: mv?.name || String(invoiceId),
       total: mv?.amount_total ?? round2(frete + imposto),
       pagamento: mv?.payment_state || '?',
+      paymentMoveId,
       resolvidoLocalmente,
       frete, imposto, moeda,
     });
