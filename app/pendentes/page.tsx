@@ -101,7 +101,9 @@ function PendentesInner() {
       return;
     }
     if (res.ok) {
-      alert(`Conta a receber criada e liquidada no Odoo ✓\nFatura ${res.numero} — total ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || 'MXN' }).format(res.total)} (${res.pagamento})`);
+      load();
+      const avisoLocal = res.resolvidoLocalmente === false ? '\nAtenção: criou no Odoo, mas não consegui remover da lista local automaticamente.' : '';
+      alert(`Conta a receber criada e liquidada no Odoo ✓\nFatura ${res.numero} — total ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || 'MXN' }).format(res.total)} (${res.pagamento})${avisoLocal}`);
     } else {
       alert('Erro Odoo: ' + (res.error || 'desconhecido'));
     }

@@ -90,12 +90,27 @@ export async function POST(req: NextRequest) {
       'account.move', 'read', [[invoiceId]], { fields: ['name', 'amount_total', 'payment_state'], context: ctx }
     );
 
+    let resolvidoLocalmente = true;
+    try {
+      const resolvidas = await query<{ remessa_id: string }>(
+        `UPDATE remessas
+         SET operacao_faturavel=false, gateway_pagamento=$1
+         WHERE remessa_id=$2 AND cliente_id IS NULL
+         RETURNING remessa_id`,
+        ['odoo_stripe', remessaId]
+      );
+      resolvidoLocalmente = resolvidas.length > 0;
+    } catch {
+      resolvidoLocalmente = false;
+    }
+
     return NextResponse.json({
       ok: true,
       invoiceId,
       numero: mv?.name || String(invoiceId),
       total: mv?.amount_total ?? round2(frete + imposto),
       pagamento: mv?.payment_state || '?',
+      resolvidoLocalmente,
       frete, imposto, moeda,
     });
   } catch (e) {
