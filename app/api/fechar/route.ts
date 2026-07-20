@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { calcularValores, converterValorManual, isEnvioManual, isStatusRemessaVisivel, moedaPagamentoCliente } from '@/lib/faturamento';
+import { carregarTaxasCambio } from '@/lib/cambio';
 import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, resetCache, round2 } from '@/lib/regras';
 import type { Remessa, ItemManual, Cliente } from '@/lib/types';
 import { endOfLocalDayUtc } from '@/lib/dates';
@@ -25,6 +26,7 @@ export async function POST(req: NextRequest) {
   }
 
   resetCache();
+  await carregarTaxasCambio();
   const regras = await carregarRegras(pais);
   const moeda = moedaPagamentoCliente(cliente);
 

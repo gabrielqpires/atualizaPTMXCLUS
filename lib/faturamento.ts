@@ -2,6 +2,7 @@ import { query } from './db';
 import { Remessa, ItemManual, ResumoCliente, Cliente } from './types';
 import { aplicarRegras, getTaxaIntercompany, round2, carregarRegras } from './regras';
 import { formatDateIsoLocal } from './dates';
+import { carregarTaxasCambio, getTaxasCambioSync } from './cambio';
 export { inferirGrupo } from './grupo';
 
 // ── Moedas e câmbio (espelho de Faturamento.gs) ─────────────
@@ -25,22 +26,6 @@ export function moedaPagamentoCliente(cliente: { moeda_pagamento?: string | null
   return normalizarMoeda(cliente.moeda_pagamento || moedaDoPais(cliente.pais || ''));
 }
 
-// Igual a TAXAS_CAMBIO_PADRAO_ do Apps Script
-const TAXAS_CAMBIO: Record<string, number> = {
-  'USD>EUR': 0.8547,
-  'EUR>USD': 1.17,
-  'EUR>MXN': 19,
-  'MXN>EUR': 0.0526,
-  'MXN>USD': 0.0588,
-  'USD>MXN': 17,
-  'BRL>USD': 0.1923,
-  'USD>BRL': 5.20,
-  'BRL>EUR': 0.1695,
-  'EUR>BRL': 5.90,
-  'BRL>MXN': 3.37,
-  'MXN>BRL': 0.2967,
-};
-
 export function converterMoeda(
   valor: number | string | null | undefined,
   moedaOrigem: string | null | undefined,
@@ -50,7 +35,7 @@ export function converterMoeda(
   const from = normalizarMoeda(moedaOrigem);
   const to = normalizarMoeda(moedaDestino);
   if (!from || !to || from === to) return amount;
-  const rate = TAXAS_CAMBIO[`${from}>${to}`];
+  const rate = getTaxasCambioSync()[`${from}>${to}`];
   return rate ? amount * rate : amount;
 }
 
@@ -96,6 +81,7 @@ export function converterValorManual(valor: number | null, moedaItem: string, mo
 }
 
 export async function calcularResumo(pais: string): Promise<ResumoCliente[]> {
+  await carregarTaxasCambio();
   const regras = await carregarRegras(pais);
 
   const clientes = await query<Cliente>(

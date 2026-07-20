@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { calcularValores, isStatusRemessaVisivel, moedaDoPais, moedaPagamentoCliente } from '@/lib/faturamento';
+import { carregarTaxasCambio } from '@/lib/cambio';
 import { execKw, odooConfigurado } from '@/lib/odoo';
 import { aplicarMediaFrete, aplicarRegras, carregarRegras, resetCache, round2 } from '@/lib/regras';
 import type { Cliente, Remessa } from '@/lib/types';
@@ -39,6 +40,7 @@ function primeiroEmail(...values: Array<string | null | undefined>): string {
 }
 
 async function valoresParaRemessa(r: Remessa, cliente: Cliente | null, pais: string) {
+  await carregarTaxasCambio();
   if (!cliente) {
     const moeda = moedaDoPais(pais);
     const vals = calcularValores(r.frete_usd, r.imposto_original, r.moeda_cotacao, moeda, r.imposto_eur, r.imposto_tipo);

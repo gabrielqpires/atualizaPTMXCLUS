@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { calcularValores, isStatusRemessaVisivel, moedaPagamentoCliente } from '@/lib/faturamento';
+import { carregarTaxasCambio } from '@/lib/cambio';
 import { aplicarMediaFrete, aplicarRegras, carregarRegras, resetCache, round2 } from '@/lib/regras';
 import type { Remessa } from '@/lib/types';
 
@@ -21,6 +22,7 @@ export async function GET(req: NextRequest) {
 
     const pais = rows[0]._pais || 'PT';
     const moedaFat = moedaPagamentoCliente({ moeda_pagamento: rows[0]._moeda_pagamento, pais });
+    await carregarTaxasCambio();
     resetCache(pais);
     const regras = await carregarRegras(pais);
 

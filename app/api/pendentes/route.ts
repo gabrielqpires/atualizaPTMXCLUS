@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 import { calcularValores, isStatusRemessaVisivel, normalizarMoeda } from '@/lib/faturamento';
+import { carregarTaxasCambio } from '@/lib/cambio';
 import { round2 } from '@/lib/regras';
 import type { Remessa } from '@/lib/types';
 
@@ -14,6 +15,7 @@ export async function GET(req: NextRequest) {
     [pais]
   );
   const visiveis = rows.filter(r => isStatusRemessaVisivel(r.status_codigo, r.status));
+  await carregarTaxasCambio();
   const enriched = visiveis.map(r => {
     // Sem cliente ainda: moeda de exibição = moeda de cotação (sem conversão), como no Apps Script
     const moeda = normalizarMoeda(r.moeda_cotacao) || 'USD';

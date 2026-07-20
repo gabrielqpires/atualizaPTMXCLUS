@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import ExcelJS from 'exceljs';
 import { query } from '@/lib/db';
 import { calcularValores, converterValorManual, inferirGrupo, isEnvioManual, isStatusRemessaVisivel, moedaPagamentoCliente } from '@/lib/faturamento';
+import { carregarTaxasCambio } from '@/lib/cambio';
 import { aplicarMediaFrete, aplicarRegras, carregarRegras, getTaxaIntercompany, resetCache, round2 } from '@/lib/regras';
 import type { Remessa, ItemManual } from '@/lib/types';
 import { formatDateIsoLocal } from '@/lib/dates';
@@ -46,6 +47,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   if (!cliente) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 });
 
   resetCache(pais);
+  await carregarTaxasCambio();
   const regras = await carregarRegras(pais);
   const moedaFat = moedaPagamentoCliente({ moeda_pagamento: cliente.moeda_pagamento, pais });
   const FMT_MOEDA = fmtMoeda(moedaFat);

@@ -31,6 +31,7 @@ export default function Home() {
         <Link href="/fechadas" className="btn text-xs">Faturas fechadas</Link>
         <Link href="/pendentes" className="btn text-xs">Pendentes</Link>
         <Link href="/cadastro" className="btn text-xs">Clientes</Link>
+        <Link href="/cambio" className="btn text-xs">Cambio</Link>
       </div>
     </div>
   );
