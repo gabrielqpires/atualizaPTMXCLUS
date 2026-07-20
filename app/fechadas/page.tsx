@@ -72,6 +72,7 @@ function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClos
   const [resumo, setResumo] = useState<ResumoFatura | null>(null);
   const [loading, setLoading] = useState(true);
   const [reabrindo, setReabrindo] = useState(false);
+  const [enviandoOdoo, setEnviandoOdoo] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -95,6 +96,24 @@ function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClos
     });
     setReabrindo(false);
     onReaberto();
+  }
+
+  async function enviarOdoo() {
+    if (!confirm('Enviar esta fatura fechada ao Odoo? Ela ficara em aberto, com vencimento em 7 dias.')) return;
+    setEnviandoOdoo(true);
+    const res = await fetch('/api/odoo/fatura-fechada', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ faturaId: fatura.fatura_id }),
+    }).then(r => r.json());
+    setEnviandoOdoo(false);
+    if (res.ok) {
+      const total = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || fatura.moeda || 'MXN' }).format(res.total || 0);
+      const prefix = res.jaExistia ? 'Fatura ja existia no Odoo; Excel atualizado' : 'Fatura criada no Odoo';
+      alert(`${prefix} OK\n${res.numero} - total ${total}\nVencimento: ${fmtDate(res.vencimento)}\nAnexo: ${res.filename || 'Excel'}`);
+    } else {
+      alert('Erro Odoo: ' + (res.error || 'desconhecido'));
+    }
   }
 
   const moeda = resumo?.moeda || fatura.moeda || 'USD';
@@ -123,6 +142,11 @@ function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClos
           >
             ↓ Excel
           </a>
+          {fatura.pais === 'MX' && (
+            <button className="btn text-xs" onClick={enviarOdoo} disabled={enviandoOdoo}>
+              {enviandoOdoo ? 'Enviando...' : '+ Odoo'}
+            </button>
+          )}
           <button className="btn btn-danger text-xs" onClick={reabrir} disabled={reabrindo}>
             {reabrindo ? 'Reabrindo...' : 'Reabrir'}
           </button>
