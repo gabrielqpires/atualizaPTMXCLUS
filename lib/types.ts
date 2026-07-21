@@ -24,6 +24,9 @@ export interface Remessa {
   frete_usd: number;
   imposto_original: number;
   moeda_cotacao: string;
+  moeda_cotacao_cambio: number | null;
+  moeda_pagamento: string | null;
+  moeda_pagamento_cambio: number | null;
   status: string;
   operacao_faturavel: boolean;
   data: string;

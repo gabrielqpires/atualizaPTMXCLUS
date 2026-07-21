@@ -26,6 +26,13 @@ function parseNumber(value: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
+function parseNullableNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  const n = Number(String(value).replace(',', '.').trim());
+  return isNaN(n) ? null : n;
+}
+
 function normalizarEmail(email: unknown): string {
   return String(email ?? '').trim().toLowerCase();
 }
@@ -129,6 +136,7 @@ async function buscarDados(): Promise<Record<string, unknown>[]> {
 interface RemessaMB {
   remessaId: string; awb: string; email: string; freteUsd: number;
   impostoOriginal: number; impostoEur: number; impostoTipo: string; moedaCotacao: string;
+  moedaCotacaoCambio: number | null; moedaPagamento: string; moedaPagamentoCambio: number | null;
   status: string; statusCodigo: string; operacaoFaturavel: boolean; data: string;
   contratoDescricao: string; pais: string; tms: boolean; mor: boolean;
   orderId: string; weight: number; destination: string; group: string;
@@ -156,6 +164,9 @@ function montarRemessas(linhas: Record<string, unknown>[]): RemessaMB[] {
       impostoEur: parseNumber(pick(row, ['impostos_final_eur', 'ImpostoEUR', 'impostos_eur'])),
       impostoTipo: String(pick(row, ['imposto_tipo', 'ImpostoTipo']) || '').toLowerCase(),
       moedaCotacao: String(pick(row, ['moeda_cotacao', 'MoedaCotacao']) || '').toUpperCase(),
+      moedaCotacaoCambio: parseNullableNumber(pick(row, ['moeda_cotacao_cambio', 'MoedaCotacaoCambio', 'Moeda Cotacao Cambio'])),
+      moedaPagamento: String(pick(row, ['moeda_pagamento', 'MoedaPagamento', 'Moeda Pagamento']) || '').toUpperCase(),
+      moedaPagamentoCambio: parseNullableNumber(pick(row, ['moeda_pagamento_cambio', 'MoedaPagamentoCambio', 'Moeda Pagamento Cambio'])),
       status: String(pick(row, ['status_nome', 'Status', 'status']) || ''),
       statusCodigo: String(pick(row, ['status_id', 'StatusCodigo', 'status_codigo']) || ''),
       operacaoFaturavel: toBoolean(pick(row, ['is_operacao_faturavel', 'OperacaoFaturavel'])),
@@ -234,11 +245,12 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
       if (existSet.has(r.remessaId)) atualizadas++; else novas++;
       const tms = r.tms || (match ? match.tms : false);
       const mor = r.mor || (match ? match.mor : false);
-      const b = idx * 21;
-      tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},$${b + 17},now(),$${b + 18},$${b + 19},$${b + 20},$${b + 21})`);
+      const b = idx * 24;
+      tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},$${b + 17},$${b + 18},$${b + 19},$${b + 20},now(),$${b + 21},$${b + 22},$${b + 23},$${b + 24})`);
       values.push(
         r.remessaId, r.awb, match ? match.clienteId : null, pais || null, r.email,
         r.freteUsd, r.impostoOriginal, r.impostoEur, r.impostoTipo, r.moedaCotacao,
+        r.moedaCotacaoCambio, r.moedaPagamento, r.moedaPagamentoCambio,
         // Espelho do Apps Script: só o "Ignorar" manual exclui da janela (isFaturavel_
         // testa apenas 'nao'); o is_operacao_faturavel do Metabase NÃO desativa remessa
         // (senão FOC etc. somem). Insert sempre true; update preserva o valor local.
@@ -249,7 +261,8 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
     await query(
       `INSERT INTO remessas (
         remessa_id, awb, cliente_id, pais, email_usuario, frete_usd, imposto_original,
-        imposto_eur, imposto_tipo, moeda_cotacao, status, status_codigo, operacao_faturavel,
+        imposto_eur, imposto_tipo, moeda_cotacao, moeda_cotacao_cambio,
+        moeda_pagamento, moeda_pagamento_cambio, status, status_codigo, operacao_faturavel,
         data, contrato_descricao, tms, mor, synced_at, order_id, weight, destination, grupo
       ) VALUES ${tuples.join(',')}
       ON CONFLICT (remessa_id) DO UPDATE SET
@@ -260,6 +273,9 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
         imposto_eur = EXCLUDED.imposto_eur,
         imposto_tipo = EXCLUDED.imposto_tipo,
         moeda_cotacao = EXCLUDED.moeda_cotacao,
+        moeda_cotacao_cambio = EXCLUDED.moeda_cotacao_cambio,
+        moeda_pagamento = EXCLUDED.moeda_pagamento,
+        moeda_pagamento_cambio = EXCLUDED.moeda_pagamento_cambio,
         status = EXCLUDED.status,
         status_codigo = EXCLUDED.status_codigo,
         operacao_faturavel = remessas.operacao_faturavel,
