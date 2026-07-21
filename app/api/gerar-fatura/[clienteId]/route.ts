@@ -88,7 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   interface LinhaConsolidado {
     data: string; awb: string; orderId: string; destination: string; group: string;
     weight: number; valorFrete: number; valorImposto: number;
-    valorFreteBrl: number | null; valorImpostoBrl: number | null;
+    valorFreteBrl: number | null; valorImpostoBrl: number | null; cambioPagamento: number | null;
     chargeDescription: string; source: string; description: string;
   }
   const linhas: LinhaConsolidado[] = workItems.map(({ r, valores }) => {
@@ -105,6 +105,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       valorImposto: round2(valores.imposto),
       valorFreteBrl: cambioPagamento > 0 ? round2(valores.frete * cambioPagamento) : null,
       valorImpostoBrl: cambioPagamento > 0 ? round2(valores.imposto * cambioPagamento) : null,
+      cambioPagamento: cambioPagamento > 0 ? cambioPagamento : null,
       chargeDescription: orderId.toLowerCase().includes('return') ? 'Return - Freight' : 'Freight',
       source: 'tech',
       description: String(r.contrato_descricao || r.awb || ''),
@@ -127,6 +128,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       valorImposto: round2(vi),
       valorFreteBrl: null,
       valorImpostoBrl: null,
+      cambioPagamento: null,
       chargeDescription: 'Freight',
       source: 'manual',
       description: String(i.descricao || 'Manual shipment'),
@@ -196,7 +198,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       { width: 13 },
       { width: 18 },
       { width: 18 },
-      ...(layoutBrlParcelEla ? [{ width: 18 }, { width: 18 }] : []),
+      ...(layoutBrlParcelEla ? [{ width: 18 }, { width: 18 }, { width: 14 }] : []),
     ];
 
     const blueFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
@@ -210,7 +212,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const mxAmountHeader = `Valor (${moedaFat})`;
     const brlAmountHeader = 'Valor (BRL)';
     const FMT_BRL = fmtMoeda('BRL');
-    const maxCol = layoutBrlParcelEla ? 8 : 6;
+    const maxCol = layoutBrlParcelEla ? 9 : 6;
 
     const styleSectionRow = (row: ExcelJS.Row) => {
       row.height = 24;
@@ -238,7 +240,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const hdr = ws.addRow([
       'Created At', 'AWB', 'Destination', 'Peso',
       `Valor Frete (${moedaFat})`, `Valor Imposto (${moedaFat})`,
-      ...(layoutBrlParcelEla ? ['Frete BRL', 'Imposto BRL'] : []),
+      ...(layoutBrlParcelEla ? ['Frete BRL', 'Imposto BRL', 'Cotacao BRL'] : []),
     ]);
     styleSectionRow(hdr);
     ws.views = [{ state: 'frozen', ySplit: 1 }];
@@ -253,13 +255,14 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
         l.weight || '',
         l.valorFrete,
         l.valorImposto,
-        ...(layoutBrlParcelEla ? [l.valorFreteBrl ?? '', l.valorImpostoBrl ?? ''] : []),
+        ...(layoutBrlParcelEla ? [l.valorFreteBrl ?? '', l.valorImpostoBrl ?? '', l.cambioPagamento ?? ''] : []),
       ]);
       row.getCell(5).numFmt = FMT_MOEDA;
       row.getCell(6).numFmt = FMT_MOEDA;
       if (layoutBrlParcelEla) {
         row.getCell(7).numFmt = FMT_BRL;
         row.getCell(8).numFmt = FMT_BRL;
+        row.getCell(9).numFmt = '0.000000';
       }
       styleDataRow(row);
     }
@@ -281,7 +284,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const lastBeforeFeeRow = ws.rowCount;
     if (taxaPctExcel > 0 && lastBeforeFeeRow >= firstDataRow) {
       ws.addRow([]);
-      const feeHdr = ws.addRow(['Fees', '', '', '', mxAmountHeader, '', ...(layoutBrlParcelEla ? [brlAmountHeader, ''] : [])]);
+      const feeHdr = ws.addRow(['Fees', '', '', '', mxAmountHeader, '', ...(layoutBrlParcelEla ? [brlAmountHeader, '', ''] : [])]);
       styleSectionRow(feeHdr);
       const feeRow = ws.addRow([
         '', `Intercompany Cross-Border Fee (${taxaPctExcel}%)`, '', '',
@@ -289,7 +292,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
         '',
         ...(layoutBrlParcelEla ? [
           { formula: `(SUM(G${firstDataRow}:G${lastDataRow})+SUM(H${firstDataRow}:H${lastDataRow}))*${taxaPctExcel / 100}` },
-          '',
+          '', '',
         ] : []),
       ]);
       feeRow.getCell(5).numFmt = FMT_MOEDA;
@@ -311,7 +314,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
         '',
         ...(layoutBrlParcelEla ? [
           { formula: `SUM(G${firstDataRow}:G${lastBeforeTotalRow})+SUM(H${firstDataRow}:H${lastDataRow})` },
-          '',
+          '', '',
         ] : []),
       ]);
       totalRow.getCell(5).numFmt = FMT_MOEDA;
