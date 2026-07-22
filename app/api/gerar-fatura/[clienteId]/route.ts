@@ -252,13 +252,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     if (ajustes.length > 0) {
       ws.addRow([]);
-      const ajHdr = ws.addRow(['Ajustes', 'Descricao', 'Tipo', 'Valor (USD)']);
+      const ajHdr = ws.addRow(['Ajustes', 'Tipo', 'Valor (USD)', '']);
       styleSectionRow(ajHdr);
       firstAjusteRow = ws.rowCount + 1;
       for (const a of ajustes) {
-        const row = ws.addRow(['', a.descricao, a.tipoEn, a.valor]);
-        row.getCell(4).numFmt = FMT_USD;
-        if (a.valor < 0) row.getCell(4).font = { color: { argb: 'FFFF4444' } };
+        const row = ws.addRow(['', a.tipoEn, a.valor, '']);
+        row.getCell(3).numFmt = FMT_USD;
+        if (a.valor < 0) row.getCell(3).font = { color: { argb: 'FFFF4444' } };
         styleDataRow(row);
       }
       lastAjusteRow = ws.rowCount;
@@ -267,19 +267,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const lastBeforeFeeRow = ws.rowCount;
     if (taxaPctExcel > 0 && lastBeforeFeeRow >= firstDataRow) {
       ws.addRow([]);
-      const feeHdr = ws.addRow(['Fees', '', '', 'Valor (USD)']);
+      const feeHdr = ws.addRow(['Fees', '', 'Valor (USD)', '']);
       styleSectionRow(feeHdr);
-      const ajusteRange = firstAjusteRow > 0 ? `+SUM(D${firstAjusteRow}:D${lastAjusteRow})` : '';
+      const ajusteRange = firstAjusteRow > 0 ? `+SUM(C${firstAjusteRow}:C${lastAjusteRow})` : '';
       const feeRow = ws.addRow([
-        '',
         `Intercompany Cross-Border Fee (${taxaPctExcel}%)`,
         '',
         { formula: `(SUM(C${firstDataRow}:C${lastDataRow})${ajusteRange})*${taxaPctExcel / 100}` },
+        '',
       ]);
-      ws.mergeCells(feeRow.number, 2, feeRow.number, 3);
-      feeRow.getCell(2).alignment = { vertical: 'middle', horizontal: 'left' };
-      feeRow.getCell(4).numFmt = FMT_USD;
-      feeRow.getCell(4).font = { bold: true };
+      ws.mergeCells(feeRow.number, 1, feeRow.number, 2);
+      feeRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
+      feeRow.getCell(3).numFmt = FMT_USD;
+      feeRow.getCell(3).font = { bold: true };
       styleDataRow(feeRow);
     }
 
@@ -289,10 +289,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       const totalRow = ws.addRow([
         'TOTAL',
         '',
+        { formula: `SUM(C${firstDataRow}:C${lastBeforeTotalRow})+SUM(D${firstDataRow}:D${lastDataRow})` },
         '',
-        { formula: `SUM(C${firstDataRow}:C${lastDataRow})+SUM(D${firstDataRow}:D${lastBeforeTotalRow})` },
       ]);
-      totalRow.getCell(4).numFmt = FMT_USD;
+      totalRow.getCell(3).numFmt = FMT_USD;
       styleSectionRow(totalRow);
     }
   } else if (usarLayoutCompacto(pais, cliente.nome)) {
