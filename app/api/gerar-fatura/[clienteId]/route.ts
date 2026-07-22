@@ -200,7 +200,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const ws = workbook.addWorksheet('Consolidado');
     ws.columns = [
       { width: 16 },
-      { width: 20 },
+      { width: 32 },
       { width: 24 },
       { width: 20 },
       { width: 18 },
@@ -281,6 +281,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
         '',
         { formula: `(SUM(D${firstDataRow}:D${lastDataRow})${ajusteRange})*${taxaPctExcel / 100}` },
       ]);
+      ws.mergeCells(feeRow.number, 2, feeRow.number, 4);
+      feeRow.getCell(2).alignment = { vertical: 'middle', horizontal: 'left' };
       feeRow.getCell(5).numFmt = FMT_USD;
       feeRow.getCell(5).font = { bold: true };
       styleDataRow(feeRow);
