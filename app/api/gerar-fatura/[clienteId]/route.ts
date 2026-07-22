@@ -98,11 +98,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   const linhas: LinhaConsolidado[] = workItems.map(({ r, valores }) => {
     const orderId = String(r.order_id || '');
     const cambioPagamento = Number(r.moeda_pagamento_cambio) || 0;
-    const remessaComCotacao = r as Remessa & { id_cotacao?: string; cotacao_id?: string; codigo_cotacao?: string };
     return {
       data: fmtDateIso(r.data),
       awb: String(r.awb || ''),
-      idCotacao: String(remessaComCotacao.id_cotacao || remessaComCotacao.cotacao_id || remessaComCotacao.codigo_cotacao || r.remessa_id || ''),
+      idCotacao: String(r.codigo_cotacao || ''),
       orderId,
       destination: String(r.destination || r.pais || ''),
       group: String(r.grupo || ''),

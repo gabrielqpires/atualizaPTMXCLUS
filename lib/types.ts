@@ -18,6 +18,7 @@ export interface Cliente {
 export interface Remessa {
   remessa_id: string;
   awb: string;
+  codigo_cotacao: string | null;
   cliente_id: string;
   pais: string;
   email_usuario: string;
