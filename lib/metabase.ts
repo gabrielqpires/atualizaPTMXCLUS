@@ -134,7 +134,7 @@ async function buscarDados(): Promise<Record<string, unknown>[]> {
 }
 
 interface RemessaMB {
-  remessaId: string; awb: string; codigoCotacao: string; email: string; freteUsd: number;
+  remessaId: string; awb: string; email: string; freteUsd: number;
   impostoOriginal: number; impostoEur: number; impostoTipo: string; moedaCotacao: string;
   moedaCotacaoCambio: number | null; moedaPagamento: string; moedaPagamentoCambio: number | null;
   status: string; statusCodigo: string; operacaoFaturavel: boolean; data: string;
@@ -158,7 +158,6 @@ function montarRemessas(linhas: Record<string, unknown>[]): RemessaMB[] {
     return {
       remessaId: String(pick(row, ['remessa_id', 'RemessaID', 'id']) || ''),
       awb: String(pick(row, ['awb', 'AWB']) || ''),
-      codigoCotacao: String(pick(row, ['codigo_cotacao', 'cotacao_id', 'id_cotacao', 'CotacaoID', 'CotacaoId', 'Cotacoes__codigo', 'cotacoes_codigo']) || ''),
       email,
       freteUsd: parseNumber(pick(row, ['Cotacoes Transportadores - Codigo__frete', 'frete_usd', 'FreteUSD'])),
       impostoOriginal: taxValue !== null ? taxValue : parseNumber(pick(row, ['impostos_final', 'ImpostoOriginal', 'imposto_original'])),
@@ -246,10 +245,10 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
       if (existSet.has(r.remessaId)) atualizadas++; else novas++;
       const tms = r.tms || (match ? match.tms : false);
       const mor = r.mor || (match ? match.mor : false);
-      const b = idx * 25;
-      tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},$${b + 17},$${b + 18},$${b + 19},$${b + 20},$${b + 21},now(),$${b + 22},$${b + 23},$${b + 24},$${b + 25})`);
+      const b = idx * 24;
+      tuples.push(`($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},$${b + 17},$${b + 18},$${b + 19},$${b + 20},now(),$${b + 21},$${b + 22},$${b + 23},$${b + 24})`);
       values.push(
-        r.remessaId, r.awb, r.codigoCotacao || null, match ? match.clienteId : null, pais || null, r.email,
+        r.remessaId, r.awb, match ? match.clienteId : null, pais || null, r.email,
         r.freteUsd, r.impostoOriginal, r.impostoEur, r.impostoTipo, r.moedaCotacao,
         r.moedaCotacaoCambio, r.moedaPagamento, r.moedaPagamentoCambio,
         // Espelho do Apps Script: só o "Ignorar" manual exclui da janela (isFaturavel_
@@ -261,14 +260,13 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
     });
     await query(
       `INSERT INTO remessas (
-        remessa_id, awb, codigo_cotacao, cliente_id, pais, email_usuario, frete_usd, imposto_original,
+        remessa_id, awb, cliente_id, pais, email_usuario, frete_usd, imposto_original,
         imposto_eur, imposto_tipo, moeda_cotacao, moeda_cotacao_cambio,
         moeda_pagamento, moeda_pagamento_cambio, status, status_codigo, operacao_faturavel,
         data, contrato_descricao, tms, mor, synced_at, order_id, weight, destination, grupo
       ) VALUES ${tuples.join(',')}
       ON CONFLICT (remessa_id) DO UPDATE SET
         awb = EXCLUDED.awb,
-        codigo_cotacao = COALESCE(EXCLUDED.codigo_cotacao, remessas.codigo_cotacao),
         email_usuario = EXCLUDED.email_usuario,
         frete_usd = EXCLUDED.frete_usd,
         imposto_original = EXCLUDED.imposto_original,

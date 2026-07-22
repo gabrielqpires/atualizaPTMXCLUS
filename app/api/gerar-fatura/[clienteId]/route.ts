@@ -90,7 +90,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
   // Linhas do Consolidado (espelho de montarRemessasDaFatura_)
   interface LinhaConsolidado {
-    data: string; awb: string; idCotacao: string; orderId: string; destination: string; group: string;
+    data: string; awb: string; orderId: string; destination: string; group: string;
     weight: number; valorFrete: number; valorImposto: number;
     valorFreteBrl: number | null; valorImpostoBrl: number | null; cambioPagamento: number | null;
     chargeDescription: string; source: string; description: string;
@@ -101,7 +101,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     return {
       data: fmtDateIso(r.data),
       awb: String(r.awb || ''),
-      idCotacao: String(r.codigo_cotacao || ''),
       orderId,
       destination: String(r.destination || r.pais || ''),
       group: String(r.grupo || ''),
@@ -125,7 +124,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     linhas.push({
       data: fmtDateIso(i.data),
       awb: String(i.awb || '').trim(),
-      idCotacao: '',
       orderId: String(i.pedido || ''),
       destination: destino,
       group: inferirGrupo(destino) || 'Non-EU',
@@ -200,7 +198,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     ws.columns = [
       { width: 16 },
       { width: 32 },
-      { width: 24 },
       { width: 20 },
       { width: 18 },
     ];
@@ -217,7 +214,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     const styleSectionRow = (row: ExcelJS.Row) => {
       row.height = 24;
-      for (let col = 1; col <= 5; col++) {
+      for (let col = 1; col <= 4; col++) {
         const cell = row.getCell(col);
         cell.fill = blueFill;
         cell.font = whiteBold;
@@ -228,7 +225,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     const styleDataRow = (row: ExcelJS.Row) => {
       row.height = 20;
-      for (let col = 1; col <= 5; col++) {
+      for (let col = 1; col <= 4; col++) {
         const cell = row.getCell(col);
         cell.border = lightBorder;
         cell.alignment = {
@@ -238,15 +235,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       }
     };
 
-    const hdr = ws.addRow(['Created At', 'AWB', 'ID Cotacao', 'Frete + Seguro (USD)', 'Impostos (USD)']);
+    const hdr = ws.addRow(['Created At', 'AWB', 'Frete + Seguro (USD)', 'Impostos (USD)']);
     styleSectionRow(hdr);
     ws.views = [{ state: 'frozen', ySplit: 1 }];
 
     const firstDataRow = ws.rowCount + 1;
     for (const l of linhas) {
-      const row = ws.addRow([l.data, l.awb, l.idCotacao, l.valorFrete, l.valorImposto]);
+      const row = ws.addRow([l.data, l.awb, l.valorFrete, l.valorImposto]);
+      row.getCell(3).numFmt = FMT_USD;
       row.getCell(4).numFmt = FMT_USD;
-      row.getCell(5).numFmt = FMT_USD;
       styleDataRow(row);
     }
     const lastDataRow = ws.rowCount;
@@ -255,13 +252,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
     if (ajustes.length > 0) {
       ws.addRow([]);
-      const ajHdr = ws.addRow(['Ajustes', 'Descricao', 'Tipo', 'Data', 'Valor (USD)']);
+      const ajHdr = ws.addRow(['Ajustes', 'Descricao', 'Tipo', 'Valor (USD)']);
       styleSectionRow(ajHdr);
       firstAjusteRow = ws.rowCount + 1;
       for (const a of ajustes) {
-        const row = ws.addRow(['', a.descricao, a.tipoEn, a.data, a.valor]);
-        row.getCell(5).numFmt = FMT_USD;
-        if (a.valor < 0) row.getCell(5).font = { color: { argb: 'FFFF4444' } };
+        const row = ws.addRow(['', a.descricao, a.tipoEn, a.valor]);
+        row.getCell(4).numFmt = FMT_USD;
+        if (a.valor < 0) row.getCell(4).font = { color: { argb: 'FFFF4444' } };
         styleDataRow(row);
       }
       lastAjusteRow = ws.rowCount;
@@ -270,20 +267,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const lastBeforeFeeRow = ws.rowCount;
     if (taxaPctExcel > 0 && lastBeforeFeeRow >= firstDataRow) {
       ws.addRow([]);
-      const feeHdr = ws.addRow(['Fees', '', '', '', 'Valor (USD)']);
+      const feeHdr = ws.addRow(['Fees', '', '', 'Valor (USD)']);
       styleSectionRow(feeHdr);
-      const ajusteRange = firstAjusteRow > 0 ? `+SUM(E${firstAjusteRow}:E${lastAjusteRow})` : '';
+      const ajusteRange = firstAjusteRow > 0 ? `+SUM(D${firstAjusteRow}:D${lastAjusteRow})` : '';
       const feeRow = ws.addRow([
         '',
         `Intercompany Cross-Border Fee (${taxaPctExcel}%)`,
         '',
-        '',
-        { formula: `(SUM(D${firstDataRow}:D${lastDataRow})${ajusteRange})*${taxaPctExcel / 100}` },
+        { formula: `(SUM(C${firstDataRow}:C${lastDataRow})${ajusteRange})*${taxaPctExcel / 100}` },
       ]);
-      ws.mergeCells(feeRow.number, 2, feeRow.number, 4);
+      ws.mergeCells(feeRow.number, 2, feeRow.number, 3);
       feeRow.getCell(2).alignment = { vertical: 'middle', horizontal: 'left' };
-      feeRow.getCell(5).numFmt = FMT_USD;
-      feeRow.getCell(5).font = { bold: true };
+      feeRow.getCell(4).numFmt = FMT_USD;
+      feeRow.getCell(4).font = { bold: true };
       styleDataRow(feeRow);
     }
 
@@ -294,10 +290,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
         'TOTAL',
         '',
         '',
-        '',
-        { formula: `SUM(D${firstDataRow}:D${lastDataRow})+SUM(E${firstDataRow}:E${lastBeforeTotalRow})` },
+        { formula: `SUM(C${firstDataRow}:C${lastDataRow})+SUM(D${firstDataRow}:D${lastBeforeTotalRow})` },
       ]);
-      totalRow.getCell(5).numFmt = FMT_USD;
+      totalRow.getCell(4).numFmt = FMT_USD;
       styleSectionRow(totalRow);
     }
   } else if (usarLayoutCompacto(pais, cliente.nome)) {
