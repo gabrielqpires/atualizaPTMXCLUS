@@ -40,6 +40,10 @@ function usarBrlParcelEla(nomeCliente: string): boolean {
   return /\bparcel\b/i.test(nomeCliente) || /\bela\s*retail\b/i.test(nomeCliente);
 }
 
+function usarLayoutUsCloser(nomeCliente: string): boolean {
+  return /\bus\s*closer\b/i.test(nomeCliente);
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ clienteId: string }> }) {
   const { clienteId } = await params;
   const pais = (req.nextUrl.searchParams.get('pais') || 'PT').toUpperCase();
@@ -86,7 +90,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
   // Linhas do Consolidado (espelho de montarRemessasDaFatura_)
   interface LinhaConsolidado {
-    data: string; awb: string; orderId: string; destination: string; group: string;
+    data: string; awb: string; idCotacao: string; orderId: string; destination: string; group: string;
     weight: number; valorFrete: number; valorImposto: number;
     valorFreteBrl: number | null; valorImpostoBrl: number | null; cambioPagamento: number | null;
     chargeDescription: string; source: string; description: string;
@@ -94,9 +98,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   const linhas: LinhaConsolidado[] = workItems.map(({ r, valores }) => {
     const orderId = String(r.order_id || '');
     const cambioPagamento = Number(r.moeda_pagamento_cambio) || 0;
+    const remessaComCotacao = r as Remessa & { id_cotacao?: string; cotacao_id?: string; codigo_cotacao?: string };
     return {
       data: fmtDateIso(r.data),
       awb: String(r.awb || ''),
+      idCotacao: String(remessaComCotacao.id_cotacao || remessaComCotacao.cotacao_id || remessaComCotacao.codigo_cotacao || r.remessa_id || ''),
       orderId,
       destination: String(r.destination || r.pais || ''),
       group: String(r.grupo || ''),
@@ -120,6 +126,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     linhas.push({
       data: fmtDateIso(i.data),
       awb: String(i.awb || '').trim(),
+      idCotacao: '',
       orderId: String(i.pedido || ''),
       destination: destino,
       group: inferirGrupo(destino) || 'Non-EU',
@@ -154,6 +161,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   const workbook = new ExcelJS.Workbook();
   workbook.calcProperties.fullCalcOnLoad = true;
   const layoutBrlParcelEla = usarBrlParcelEla(cliente.nome);
+  const layoutUsCloser = usarLayoutUsCloser(cliente.nome);
   const taxaPctExcel = layoutBrlParcelEla ? 3 : taxaPct;
 
   const CONSOLIDADO_HEADERS = [
@@ -188,7 +196,110 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     }
   }
 
-  if (usarLayoutCompacto(pais, cliente.nome)) {
+  if (layoutUsCloser) {
+    const ws = workbook.addWorksheet('Consolidado');
+    ws.columns = [
+      { width: 16 },
+      { width: 20 },
+      { width: 24 },
+      { width: 20 },
+      { width: 18 },
+    ];
+
+    const blueFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+    const whiteBold: Partial<ExcelJS.Font> = { bold: true, color: { argb: BRANCO } };
+    const lightBorder: Partial<ExcelJS.Borders> = {
+      top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+      right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+    };
+    const FMT_USD = fmtMoeda('USD');
+
+    const styleSectionRow = (row: ExcelJS.Row) => {
+      row.height = 24;
+      for (let col = 1; col <= 5; col++) {
+        const cell = row.getCell(col);
+        cell.fill = blueFill;
+        cell.font = whiteBold;
+        cell.alignment = { vertical: 'middle', horizontal: col >= 4 ? 'right' : 'left' };
+        cell.border = lightBorder;
+      }
+    };
+
+    const styleDataRow = (row: ExcelJS.Row) => {
+      row.height = 20;
+      for (let col = 1; col <= 5; col++) {
+        const cell = row.getCell(col);
+        cell.border = lightBorder;
+        cell.alignment = {
+          vertical: 'middle',
+          horizontal: col >= 4 ? 'right' : (col === 1 ? 'center' : 'left'),
+        };
+      }
+    };
+
+    const hdr = ws.addRow(['Created At', 'AWB', 'ID Cotacao', 'Frete + Seguro (USD)', 'Impostos (USD)']);
+    styleSectionRow(hdr);
+    ws.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const firstDataRow = ws.rowCount + 1;
+    for (const l of linhas) {
+      const row = ws.addRow([l.data, l.awb, l.idCotacao, l.valorFrete, l.valorImposto]);
+      row.getCell(4).numFmt = FMT_USD;
+      row.getCell(5).numFmt = FMT_USD;
+      styleDataRow(row);
+    }
+    const lastDataRow = ws.rowCount;
+    let firstAjusteRow = 0;
+    let lastAjusteRow = 0;
+
+    if (ajustes.length > 0) {
+      ws.addRow([]);
+      const ajHdr = ws.addRow(['Ajustes', 'Descricao', 'Tipo', 'Data', 'Valor (USD)']);
+      styleSectionRow(ajHdr);
+      firstAjusteRow = ws.rowCount + 1;
+      for (const a of ajustes) {
+        const row = ws.addRow(['', a.descricao, a.tipoEn, a.data, a.valor]);
+        row.getCell(5).numFmt = FMT_USD;
+        if (a.valor < 0) row.getCell(5).font = { color: { argb: 'FFFF4444' } };
+        styleDataRow(row);
+      }
+      lastAjusteRow = ws.rowCount;
+    }
+
+    const lastBeforeFeeRow = ws.rowCount;
+    if (taxaPctExcel > 0 && lastBeforeFeeRow >= firstDataRow) {
+      ws.addRow([]);
+      const feeHdr = ws.addRow(['Fees', '', '', '', 'Valor (USD)']);
+      styleSectionRow(feeHdr);
+      const ajusteRange = firstAjusteRow > 0 ? `+SUM(E${firstAjusteRow}:E${lastAjusteRow})` : '';
+      const feeRow = ws.addRow([
+        '',
+        `Intercompany Cross-Border Fee (${taxaPctExcel}%)`,
+        '',
+        '',
+        { formula: `(SUM(D${firstDataRow}:D${lastDataRow})${ajusteRange})*${taxaPctExcel / 100}` },
+      ]);
+      feeRow.getCell(5).numFmt = FMT_USD;
+      feeRow.getCell(5).font = { bold: true };
+      styleDataRow(feeRow);
+    }
+
+    const lastBeforeTotalRow = ws.rowCount;
+    if (lastBeforeTotalRow >= firstDataRow) {
+      ws.addRow([]);
+      const totalRow = ws.addRow([
+        'TOTAL',
+        '',
+        '',
+        '',
+        { formula: `SUM(D${firstDataRow}:D${lastDataRow})+SUM(E${firstDataRow}:E${lastBeforeTotalRow})` },
+      ]);
+      totalRow.getCell(5).numFmt = FMT_USD;
+      styleSectionRow(totalRow);
+    }
+  } else if (usarLayoutCompacto(pais, cliente.nome)) {
     // ── Formato compacto: MX e Parcel US, layout original aprovado ──
     const ws = workbook.addWorksheet('Consolidado');
     ws.columns = [
