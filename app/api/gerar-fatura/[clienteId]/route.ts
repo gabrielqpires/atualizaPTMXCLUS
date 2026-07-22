@@ -40,8 +40,8 @@ function usarBrlParcelEla(nomeCliente: string): boolean {
   return /\bparcel\b/i.test(nomeCliente) || /\bela\s*retail\b/i.test(nomeCliente);
 }
 
-function usarLayoutUsCloser(nomeCliente: string): boolean {
-  return /\bus\s*closer\b/i.test(nomeCliente);
+function usarLayoutUsCloser(clienteId: string, nomeCliente: string): boolean {
+  return clienteId === 'LOCAL_CLI_1784315642607' || /\bus\s*closer\b/i.test(nomeCliente);
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ clienteId: string }> }) {
@@ -161,7 +161,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   const workbook = new ExcelJS.Workbook();
   workbook.calcProperties.fullCalcOnLoad = true;
   const layoutBrlParcelEla = usarBrlParcelEla(cliente.nome);
-  const layoutUsCloser = usarLayoutUsCloser(cliente.nome);
+  const layoutUsCloser = usarLayoutUsCloser(clienteId, cliente.nome);
   const taxaPctExcel = layoutBrlParcelEla ? 3 : taxaPct;
 
   const CONSOLIDADO_HEADERS = [
