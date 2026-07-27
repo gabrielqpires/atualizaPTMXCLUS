@@ -25,8 +25,16 @@ type ItemFatura = {
   valor?: number;
 };
 
+type RemessaFatura = {
+  remessa_id?: string;
+  awb?: string | null;
+  valor_frete?: number;
+  valor_imposto?: number;
+};
+
 type DetalhesFatura = {
   resumo: ResumoFatura;
+  remessas: RemessaFatura[];
   itens: ItemFatura[];
 };
 
@@ -75,6 +83,7 @@ async function fetchDetalhes(req: NextRequest, faturaId: string): Promise<Detalh
   if (!res.ok) throw new Error(json?.error || `Falha ao recalcular resumo da fatura (${res.status}).`);
   return {
     resumo: json?.resumo || {},
+    remessas: Array.isArray(json?.remessas) ? json.remessas : [],
     itens: Array.isArray(json?.itens) ? json.itens : [],
   };
 }
@@ -155,6 +164,23 @@ async function anexarExcel(invoiceId: number, filename: string, buffer: Buffer, 
   return execKw<number>('ir.attachment', 'create', [vals], { context: ctx });
 }
 
+async function getOrCreateServiceProduct(defaultCode: string, name: string, ctx: Record<string, unknown>): Promise<number> {
+  const found = await execKw<number[]>('product.product', 'search', [[['default_code', '=', defaultCode]]], {
+    limit: 1,
+    context: ctx,
+  });
+  if (found[0]) return found[0];
+
+  return execKw<number>('product.product', 'create', [{
+    name,
+    default_code: defaultCode,
+    type: 'service',
+    sale_ok: true,
+    purchase_ok: false,
+    taxes_id: [[6, 0, []]],
+  }], { context: ctx });
+}
+
 export async function POST(req: NextRequest) {
   if (!odooConfigurado()) {
     return NextResponse.json({ error: 'Odoo nao configurado (faltam env vars ODOO_*).' }, { status: 500 });
@@ -217,18 +243,24 @@ export async function POST(req: NextRequest) {
     }
 
     const linhas: unknown[] = [];
-    const addLine = (name: string, amount: number) => {
+    const addLine = async (code: string, name: string, amount: number) => {
       const value = round2(Number(amount || 0));
       if (Math.abs(value) >= 0.01) {
-        linhas.push([0, 0, { name, quantity: 1, price_unit: value, tax_ids: [[6, 0, []]] }]);
+        const productId = await getOrCreateServiceProduct(code, name, ctx);
+        linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: value, tax_ids: [[6, 0, []]] }]);
       }
     };
-    addLine(`Freight - ${numFatura}`, Number(resumo.valor_frete || 0));
-    addLine(`Duties & Taxes - ${numFatura}`, Number(resumo.valor_imposto || 0));
-    for (const item of detalhes.itens) {
-      addLine(ajusteNome(item, numFatura), ajusteValor(item));
+    for (const remessa of detalhes.remessas) {
+      const awb = String(remessa.awb || remessa.remessa_id || '').trim();
+      const suffix = awb || numFatura;
+      await addLine(`SS-AWB-${suffix}-FREIGHT`, `AWB ${suffix} - Freight`, Number(remessa.valor_frete || 0));
+      await addLine(`SS-AWB-${suffix}-DUTIES`, `AWB ${suffix} - Duties & Taxes`, Number(remessa.valor_imposto || 0));
     }
-    addLine(`Intercompany Cross-Border Fee - ${numFatura}`, Number(resumo.taxa_intercompany || 0));
+    for (let idx = 0; idx < detalhes.itens.length; idx++) {
+      const item = detalhes.itens[idx];
+      await addLine(`SS-FAT-${numFatura}-ADJ-${idx + 1}`, ajusteNome(item, numFatura), ajusteValor(item));
+    }
+    await addLine(`SS-FAT-${numFatura}-FEE`, `Fatura ${numFatura} - Intercompany Cross-Border Fee`, Number(resumo.taxa_intercompany || 0));
 
     if (!linhas.length) return NextResponse.json({ error: 'Fatura sem valor para enviar ao Odoo.' }, { status: 400 });
 

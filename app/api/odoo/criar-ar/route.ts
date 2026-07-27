@@ -136,6 +136,24 @@ async function registrarPagamentoStripe(invoiceId: number, companyId: number, pa
   await execKw('account.move.line', 'reconcile', [[invoiceReceivable.id, paymentReceivable.id]], { context: ctx });
   return paymentMoveId;
 }
+
+async function getOrCreateServiceProduct(defaultCode: string, name: string, ctx: Record<string, unknown>): Promise<number> {
+  const found = await execKw<number[]>('product.product', 'search', [[['default_code', '=', defaultCode]]], {
+    limit: 1,
+    context: ctx,
+  });
+  if (found[0]) return found[0];
+
+  return execKw<number>('product.product', 'create', [{
+    name,
+    default_code: defaultCode,
+    type: 'service',
+    sale_ok: true,
+    purchase_ok: false,
+    taxes_id: [[6, 0, []]],
+  }], { context: ctx });
+}
+
 // Cria uma conta a receber (fatura de cliente) no Odoo com 2 linhas (Freight +
 // Duties & Taxes, sem imposto do Odoo) e já registra o pagamento no diário Stripe.
 // Se o parceiro (por e-mail) não existir e não vier `nome`, responde needsName.
@@ -194,8 +212,16 @@ export async function POST(req: NextRequest) {
 
     // 2) Fatura de cliente (conta a receber) com 2 linhas, sem imposto do Odoo
     const linhas: unknown[] = [];
-    if (frete > 0) linhas.push([0, 0, { name: `Freight — AWB ${r.awb}`, quantity: 1, price_unit: frete, tax_ids: [[6, 0, []]] }]);
-    if (imposto > 0) linhas.push([0, 0, { name: `Duties & Taxes — AWB ${r.awb}`, quantity: 1, price_unit: imposto, tax_ids: [[6, 0, []]] }]);
+    if (frete > 0) {
+      const name = `AWB ${r.awb} - Freight`;
+      const productId = await getOrCreateServiceProduct(`SS-AWB-${r.awb}-FREIGHT`, name, ctx);
+      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: frete, tax_ids: [[6, 0, []]] }]);
+    }
+    if (imposto > 0) {
+      const name = `AWB ${r.awb} - Duties & Taxes`;
+      const productId = await getOrCreateServiceProduct(`SS-AWB-${r.awb}-DUTIES`, name, ctx);
+      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: imposto, tax_ids: [[6, 0, []]] }]);
+    }
 
     const hoje = new Date().toISOString().slice(0, 10);
     const invoiceId = await execKw<number>('account.move', 'create', [{
