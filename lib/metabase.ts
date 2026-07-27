@@ -288,9 +288,9 @@ export async function syncRemessasDoMetabase(tipo: 'manual' | 'automatico'): Pro
         weight = EXCLUDED.weight,
         destination = EXCLUDED.destination,
         grupo = EXCLUDED.grupo,
-        cliente_id = COALESCE(EXCLUDED.cliente_id, remessas.cliente_id),
+        cliente_id = COALESCE(remessas.cliente_id, EXCLUDED.cliente_id),
         pais = COALESCE(
-          (SELECT c.pais FROM clientes c WHERE c.cliente_id = COALESCE(EXCLUDED.cliente_id, remessas.cliente_id)),
+          (SELECT c.pais FROM clientes c WHERE c.cliente_id = COALESCE(remessas.cliente_id, EXCLUDED.cliente_id)),
           NULLIF(EXCLUDED.pais,''),
           NULLIF(remessas.pais,'')
         )`,
