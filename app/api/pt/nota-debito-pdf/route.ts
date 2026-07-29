@@ -269,7 +269,6 @@ function criarPdfNotaDebito(args: {
   add(52, 658, 10, '2560-363 Torres Vedras - Portugal');
   add(52, 643, 10, 'E-mail: financeiro@shipsmart.global');
 
-  draw('0.94 0.96 0.98 rg 42 591 511 26 re f');
   add(52, 600, 11, 'Destinatario', true, '0.04 0.13 0.30');
   let y = 577;
   for (const line of partnerLines) {
