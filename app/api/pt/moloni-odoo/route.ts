@@ -358,7 +358,7 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
     maturity_date_id: cfg.maturityDateId,
     date: dataDoc,
     expiration_date: vencimento,
-    status: 1,
+    status: 0,
     products: lines,
     special_discount: round2(specialDiscount),
     our_reference: numFatura,
@@ -733,4 +733,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 500 });
   }
 }
+
 
