@@ -1,4 +1,6 @@
 ﻿import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { query } from '@/lib/db';
 import { execKw, odooConfigurado } from '@/lib/odoo';
 import { buscarClienteMoloni, getMoloniCustomerDetails, moloniConfigurado, primeiroEmail } from '@/lib/moloni';
@@ -119,6 +121,40 @@ async function buscarClienteFiscalMoloni(cliente: Cliente, nomeCliente: string):
   return getMoloniCustomerDetails(found.customer_id);
 }
 
+function destinatarioFiscal(cliente: Cliente, nomeCliente: string): { nome: string; fallback: MoloniCustomerDetails | null } {
+  const intermediario = String(cliente.intermediario_cobranca || '').trim().toLowerCase();
+  const nome = String(nomeCliente || cliente.nome || '').trim();
+  if (intermediario.includes('ucm')) {
+    return {
+      nome: 'Unstoppable Commerce Machine, Lda.',
+      fallback: {
+        customer_id: 0,
+        name: 'Unstoppable Commerce Machine, Lda.',
+        vat: '518309061',
+        address: 'Rua Professor Oliveira Andrade N 420A',
+        zip_code: '4470-634',
+        city: 'Maia',
+        country: { country: 'Portugal', iso_3166_1: 'PT' },
+      },
+    };
+  }
+  if (intermediario.includes('undo') || nome.toLowerCase().includes('undo')) {
+    return {
+      nome: 'Conscious Galaxy Unipessoal Lda',
+      fallback: {
+        customer_id: 0,
+        name: 'Conscious Galaxy Unipessoal Lda',
+        vat: '516382810',
+        address: 'Rua Jose Lourenco da Luz Gomes N 1 2 Esq',
+        zip_code: '2770-105',
+        city: 'Paco de Arcos',
+        country: { country: 'Portugal', iso_3166_1: 'PT' },
+      },
+    };
+  }
+  return { nome: nome || 'Cliente', fallback: null };
+}
+
 function stripControl(value: string): string {
   return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -148,6 +184,16 @@ function wrapWords(text: string, maxChars: number): string[] {
   return lines;
 }
 
+function readLogoJpeg(): { data: string; width: number; height: number } | null {
+  try {
+    const logoPath = path.join(process.cwd(), 'public', 'shipsmart-logo.jpg');
+    const data = fs.readFileSync(logoPath);
+    return { data: data.toString('latin1'), width: 385, height: 278 };
+  } catch {
+    return null;
+  }
+}
+
 function buildPdf(objects: string[]): Buffer {
   const header = '%PDF-1.4\n';
   let body = '';
@@ -175,8 +221,9 @@ function criarPdfNotaDebito(args: {
   prazoDias: number;
 }): Buffer {
   const pageLines: string[] = [];
-  const add = (x: number, y: number, size: number, text: string, bold = false) => {
-    pageLines.push(`BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${pdfEscape(text)}) Tj ET`);
+  const draw = (cmd: string) => pageLines.push(cmd);
+  const add = (x: number, y: number, size: number, text: string, bold = false, color = '0 0 0') => {
+    pageLines.push(`BT ${color} rg /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${pdfEscape(text)}) Tj ET`);
   };
   const paragraph = (x: number, y: number, size: number, text: string, maxChars = 88, leading = 15) => {
     let yy = y;
@@ -204,28 +251,41 @@ function criarPdfNotaDebito(args: {
   ].filter(Boolean);
   const periodo = args.dataInicio && args.dataFim ? ` entre ${args.dataInicio} e ${args.dataFim}` : '';
 
-  add(52, 780, 18, `NOTA DE DEBITO ${args.numero} - IMPOSTOS ADUANEIROS`, true);
-  add(52, 758, 13, '(DUTIES & TAXES)', true);
-  add(52, 720, 11, 'Shipsmart Global / DARE2BEGIN - Unipessoal Lda.', true);
-  add(52, 704, 10, 'NIF: 519023790');
-  add(52, 689, 10, 'Rua Serpa Pinto, No 18, 1o andar');
-  add(52, 674, 10, '2560-363 Torres Vedras - Portugal');
-  add(52, 659, 10, 'E-mail: financeiro@shipsmart.global');
+  const logo = readLogoJpeg();
+  draw('0.94 0.96 0.98 rg 42 742 511 66 re f');
+  draw('0.08 0.19 0.35 rg 42 742 511 6 re f');
+  if (logo) {
+    draw('q 92 0 0 66 438 742 cm /Im1 Do Q');
+  } else {
+    draw('0.04 0.13 0.30 rg 452 754 78 42 re f');
+    add(462, 780, 13, 'SHIP', true, '1 1 1');
+    add(462, 764, 13, 'SMART', true, '1 1 1');
+  }
+  add(52, 786, 17, `NOTA DE DEBITO ${args.numero}`, true, '0.04 0.13 0.30');
+  add(52, 766, 13, 'IMPOSTOS ADUANEIROS (DUTIES & TAXES)', true, '0.04 0.13 0.30');
 
-  add(52, 627, 11, 'Destinatario:', true);
-  let y = 611;
+  add(52, 720, 11, 'Emitente', true, '0.04 0.13 0.30');
+  add(52, 704, 11, 'Shipsmart Global / DARE2BEGIN - Unipessoal Lda.', true);
+  add(52, 688, 10, 'NIF: 519023790');
+  add(52, 673, 10, 'Rua Serpa Pinto, No 18, 1o andar');
+  add(52, 658, 10, '2560-363 Torres Vedras - Portugal');
+  add(52, 643, 10, 'E-mail: financeiro@shipsmart.global');
+
+  draw('0.94 0.96 0.98 rg 42 591 511 26 re f');
+  add(52, 600, 11, 'Destinatario', true, '0.04 0.13 0.30');
+  let y = 577;
   for (const line of partnerLines) {
     add(52, y, 10, line);
     y -= 15;
   }
 
   y -= 14;
-  add(52, y, 12, '1. Contexto', true);
+  add(52, y, 12, '1. Contexto', true, '0.04 0.13 0.30');
   y -= 20;
   y = paragraph(52, y, 10, 'Esta Nota de Debito refere-se exclusivamente aos impostos de importacao (Duties & Taxes) pagos pela Shipsmart/DARE2BEGIN durante o processo de desembaraco aduaneiro, em nome e por conta do cliente. O valor debitado nao constitui receita, sendo apenas o reembolso do montante suportado.');
 
   y -= 14;
-  add(52, y, 12, '2. Impostos (Duties & Taxes) pagos por conta do cliente', true);
+  add(52, y, 12, '2. Impostos (Duties & Taxes) pagos por conta do cliente', true, '0.04 0.13 0.30');
   y -= 22;
   add(70, y, 10, '- Tipo de despesa: Impostos aduaneiros (Duties & Taxes)'); y -= 16;
   add(70, y, 10, `- Processo: Desembaraco aduaneiro fora da UE${periodo}.`); y -= 16;
@@ -234,7 +294,7 @@ function criarPdfNotaDebito(args: {
   add(52, y, 12, `Total a reembolsar: EUR ${moneyEur(args.total)}`, true);
 
   y -= 38;
-  add(52, y, 12, '3. Condicoes de Pagamento', true);
+  add(52, y, 12, '3. Condicoes de Pagamento', true, '0.04 0.13 0.30');
   y -= 22;
   add(70, y, 10, '- Moeda: EUR'); y -= 16;
   add(70, y, 10, `- Prazo: ${args.prazoDias || 7} dias apos rececao`); y -= 16;
@@ -242,17 +302,23 @@ function criarPdfNotaDebito(args: {
   add(70, y, 10, '- Referencia: Reembolso - Duties & Taxes (Desembaraco Aduaneiro)');
 
   y -= 36;
-  add(52, y, 12, '4. Observacao Legal', true);
+  add(52, y, 12, '4. Observacao Legal', true, '0.04 0.13 0.30');
   y -= 20;
   paragraph(52, y, 10, 'Documento nao sujeito a IVA, por corresponder a despesas efetuadas em nome e por conta do cliente (reembolso de encargos aduaneiros). Nao representa prestacao de servicos.');
 
   const stream = pageLines.join('\n');
+  const contentObjectNumber = logo ? 7 : 6;
+  const imageResources = logo ? '/XObject << /Im1 6 0 R >>' : '';
+  const imageObject = logo
+    ? `<< /Type /XObject /Subtype /Image /Width ${logo.width} /Height ${logo.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${Buffer.byteLength(logo.data, 'latin1')} >>\nstream\n${logo.data}\nendstream`
+    : null;
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> ${imageResources} >> /Contents ${contentObjectNumber} 0 R >>`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+    ...(imageObject ? [imageObject] : []),
     `<< /Length ${Buffer.byteLength(stream, 'latin1')} >>\nstream\n${stream}\nendstream`,
   ];
   return buildPdf(objects);
@@ -276,12 +342,14 @@ export async function GET(req: NextRequest) {
     const total = totalDutiesNonEu(detalhes);
     if (total < 0.01) return NextResponse.json({ error: 'Sem duties/taxes Non-EU para gerar Nota de Debito.' }, { status: 400 });
 
-    const nomeCliente = fat.nome_cliente || cliente.nome;
-    const [numero, moloniCustomer, partner] = await Promise.all([
+    const fiscal = destinatarioFiscal(cliente, fat.nome_cliente || cliente.nome);
+    const nomeCliente = fiscal.nome;
+    const [numero, moloniCustomerRaw, partner] = await Promise.all([
       proximoNumeroNotaDebito().catch(() => 'PREVIEW'),
       buscarClienteFiscalMoloni(cliente, nomeCliente).catch(() => null),
       buscarPartnerOdoo(cliente, nomeCliente).catch(() => null),
     ]);
+    const moloniCustomer = moloniCustomerRaw || fiscal.fallback;
     const datas = nonEuDuties.map(r => String(r.data || '').slice(0, 10)).filter(Boolean).sort();
     const pdf = criarPdfNotaDebito({
       numero,
@@ -306,4 +374,5 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 500 });
   }
 }
+
 
