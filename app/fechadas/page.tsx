@@ -116,6 +116,35 @@ function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClos
     }
   }
 
+  async function enviarMoloniOdooPt() {
+    if (!confirm('Emitir fatura no Moloni e criar a Nota de Debito no Odoo PT?')) return;
+    setEnviandoOdoo(true);
+    const res = await fetch('/api/pt/moloni-odoo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ faturaId: fatura.fatura_id }),
+    }).then(r => r.json());
+    setEnviandoOdoo(false);
+    if (res.ok) {
+      const moloni = res.moloni
+        ? `${res.moloni.jaExistia ? 'Moloni ja existia' : 'Moloni emitido'}: ${res.moloni.label || res.moloni.id}`
+        : 'Moloni sem valor a emitir';
+      const nd = res.odooNd
+        ? `${res.odooNd.jaExistia ? 'ND Odoo ja existia' : 'ND Odoo criada'}: ${res.odooNd.name || res.odooNd.id}`
+        : 'ND Odoo sem impostos a debitar';
+      const totalMoloni = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || fatura.moeda || 'EUR' }).format(res.totalMoloniEstimado || 0);
+      const totalNd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || fatura.moeda || 'EUR' }).format(res.totalNotaDebito || 0);
+      alert(`Integracao PT OK
+${moloni} - ${totalMoloni}
+${nd} - ${totalNd}
+Vencimento: ${fmtDate(res.vencimento)}
+Anexos: Excel + PDF da ND`);
+    } else {
+      alert('Erro Moloni/Odoo PT: ' + (res.error || 'desconhecido'));
+    }
+  }
+
+
   const moeda = resumo?.moeda || fatura.moeda || 'USD';
   const valorFrete = resumo ? resumo.valor_frete : fatura.valor_frete;
   const valorImposto = resumo ? resumo.valor_imposto : fatura.valor_imposto;
@@ -145,6 +174,21 @@ function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClos
           {fatura.pais === 'MX' && (
             <button className="btn text-xs" onClick={enviarOdoo} disabled={enviandoOdoo}>
               {enviandoOdoo ? 'Enviando...' : '+ Odoo'}
+            </button>
+          )}
+          {String(fatura.pais || '').toUpperCase() === 'PT' && (
+            <a
+              href={`/api/pt/nota-debito-pdf?faturaId=${fatura.fatura_id}`}
+              className="btn text-xs"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              PDF ND
+            </a>
+          )}
+          {String(fatura.pais || '').toUpperCase() === 'PT' && (
+            <button className="btn text-xs" onClick={enviarMoloniOdooPt} disabled={enviandoOdoo}>
+              {enviandoOdoo ? 'Enviando...' : '+ Moloni/Odoo'}
             </button>
           )}
           <button className="btn btn-danger text-xs" onClick={reabrir} disabled={reabrindo}>
@@ -211,7 +255,7 @@ function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClos
                     </tr>
                   ))}
                   {remessas.length === 0 && (
-                    <tr><td colSpan={11} className="text-zinc-500 text-center py-4">Sem remessas.</td></tr>
+                    <tr><td colSpan={12} className="text-zinc-500 text-center py-4">Sem remessas.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -268,6 +312,7 @@ function FechadasInner() {
   const [loading, setLoading] = useState(true);
   const [loadingAll, setLoadingAll] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [enviandoId, setEnviandoId] = useState<string | null>(null);
 
   const load = useCallback((all = false) => {
     setLoading(true);
@@ -284,6 +329,57 @@ function FechadasInner() {
   }, [pais]);
 
   useEffect(() => { load(false); }, [load]);
+
+
+  async function enviarIntegracaoFatura(fatura: Fatura) {
+    const paisFatura = String(fatura.pais || '').toUpperCase();
+    const isPt = paisFatura === 'PT';
+    const isMx = paisFatura === 'MX';
+    if (!isPt && !isMx) return;
+
+    const msg = isPt
+      ? 'Emitir fatura no Moloni e criar a Nota de Debito no Odoo PT?'
+      : 'Enviar esta fatura fechada ao Odoo? Ela ficara em aberto, com vencimento em 7 dias.';
+    if (!confirm(msg)) return;
+
+    setEnviandoId(fatura.fatura_id);
+    const endpoint = isPt ? '/api/pt/moloni-odoo' : '/api/odoo/fatura-fechada';
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ faturaId: fatura.fatura_id }),
+    }).then(r => r.json());
+    setEnviandoId(null);
+
+    if (!res.ok) {
+      alert((isPt ? 'Erro Moloni/Odoo PT: ' : 'Erro Odoo: ') + (res.error || 'desconhecido'));
+      return;
+    }
+
+    if (isPt) {
+      const moloni = res.moloni
+        ? `${res.moloni.jaExistia ? 'Moloni ja existia' : 'Moloni emitido'}: ${res.moloni.label || res.moloni.id}`
+        : 'Moloni sem valor a emitir';
+      const nd = res.odooNd
+        ? `${res.odooNd.jaExistia ? 'ND Odoo ja existia' : 'ND Odoo criada'}: ${res.odooNd.name || res.odooNd.id}`
+        : 'ND Odoo sem impostos Non-EU a debitar';
+      const totalMoloni = fmt(res.totalMoloniEstimado || 0, res.moeda || fatura.moeda || 'EUR');
+      const totalNd = fmt(res.totalNotaDebito || 0, res.moeda || fatura.moeda || 'EUR');
+      alert(`Integracao PT OK
+${moloni} - ${totalMoloni}
+${nd} - ${totalNd}
+Vencimento: ${fmtDate(res.vencimento)}
+Anexos: Excel + PDF da ND`);
+      return;
+    }
+
+    const total = fmt(res.total || 0, res.moeda || fatura.moeda || 'MXN');
+    const prefix = res.jaExistia ? 'Fatura ja existia no Odoo; Excel atualizado' : 'Fatura criada no Odoo';
+    alert(`${prefix} OK
+${res.numero} - total ${total}
+Vencimento: ${fmtDate(res.vencimento)}
+Anexo: ${res.filename || 'Excel'}`);
+  }
 
   const backHref = pais ? `/dashboard/${pais}` : '/';
 
@@ -326,6 +422,7 @@ function FechadasInner() {
                 <th className="amount">Manual</th>
                 <th className="amount">Total</th>
                 <th>Status</th>
+                <th>Acoes</th>
               </tr>
             </thead>
             <tbody>
@@ -348,10 +445,42 @@ function FechadasInner() {
                     </td>
                     <td className="amount font-bold text-indigo-300">{fmt(f.valor_total, f.moeda)}</td>
                     <td><span className={`pill ${f.status === 'fechado' ? 'pill-ok' : 'pill-warn'}`}>{f.status}</span></td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <div className="flex gap-2 justify-end">
+                        <a
+                          href={`/api/gerar-fatura/${f.cliente_id}?pais=${f.pais}&numFatura=${f.num_fatura || ''}`}
+                          className="btn text-xs"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Excel
+                        </a>
+                        {String(f.pais || '').toUpperCase() === 'PT' && (
+                          <a
+                            href={`/api/pt/nota-debito-pdf?faturaId=${f.fatura_id}`}
+                            className="btn text-xs"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            PDF ND
+                          </a>
+                        )}
+                        {String(f.pais || '').toUpperCase() === 'PT' && (
+                          <button className="btn text-xs" onClick={() => enviarIntegracaoFatura(f)} disabled={enviandoId === f.fatura_id}>
+                            {enviandoId === f.fatura_id ? 'Enviando...' : 'Moloni/Odoo'}
+                          </button>
+                        )}
+                        {String(f.pais || '').toUpperCase() === 'MX' && (
+                          <button className="btn text-xs" onClick={() => enviarIntegracaoFatura(f)} disabled={enviandoId === f.fatura_id}>
+                            {enviandoId === f.fatura_id ? 'Enviando...' : 'Odoo'}
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                   {expandedId === f.fatura_id && (
                     <tr>
-                      <td colSpan={11} className="p-0 border-b border-zinc-800">
+                      <td colSpan={12} className="p-0 border-b border-zinc-800">
                         <div className="p-3 bg-zinc-950">
                           <FaturaDetalhe
                             fatura={f}
@@ -365,7 +494,7 @@ function FechadasInner() {
                 </React.Fragment>
               ))}
               {faturas.length === 0 && (
-                <tr><td colSpan={11} className="text-zinc-500 text-center py-6">Nenhum faturamento fechado{pais ? ` para ${pais}` : ''}.</td></tr>
+                <tr><td colSpan={12} className="text-zinc-500 text-center py-6">Nenhum faturamento fechado{pais ? ` para ${pais}` : ''}.</td></tr>
               )}
             </tbody>
           </table>
