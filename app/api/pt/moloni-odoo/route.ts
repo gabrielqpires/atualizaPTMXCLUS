@@ -506,14 +506,12 @@ function criarPdfNotaDebito(args: {
   const periodo = args.dataInicio && args.dataFim ? ` entre ${args.dataInicio} e ${args.dataFim}` : '';
 
   const logo = readLogoJpeg();
-  draw('0.94 0.96 0.98 rg 42 742 511 66 re f');
-  draw('0.08 0.19 0.35 rg 42 742 511 6 re f');
+  draw('0.08 0.19 0.35 rg 42 744 511 2 re f');
   if (logo) {
-    draw('q 92 0 0 66 438 742 cm /Im1 Do Q');
+    draw('q 92 0 0 66 438 746 cm /Im1 Do Q');
   } else {
-    draw('0.04 0.13 0.30 rg 452 754 78 42 re f');
-    add(462, 780, 13, 'SHIP', true, '1 1 1');
-    add(462, 764, 13, 'SMART', true, '1 1 1');
+    add(462, 780, 13, 'SHIP', true, '0 0 0');
+    add(462, 764, 13, 'SMART', true, '0 0 0');
   }
   add(52, 786, 17, `NOTA DE DEBITO ${args.numero}`, true, '0.04 0.13 0.30');
   add(52, 766, 13, 'IMPOSTOS ADUANEIROS (DUTIES & TAXES)', true, '0.04 0.13 0.30');
