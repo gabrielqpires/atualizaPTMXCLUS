@@ -197,6 +197,20 @@ function ajusteValor(item: ItemFatura): number {
   return tipo === 'desconto' || tipo === 'discount' ? -valor : valor;
 }
 
+function moloniAjusteProduct(item: ItemFatura): { reference: string; name: string } {
+  const tipo = String(item.tipo_ajuste || '').trim().toLowerCase();
+  if (tipo === 'armazenamento' || tipo === 'storage') {
+    return {
+      reference: productRef('MOLONI_PRODUCT_REF_STORAGE') || 'Storage',
+      name: productRef('MOLONI_PRODUCT_NAME_STORAGE') || 'Storage',
+    };
+  }
+  return {
+    reference: productRef('MOLONI_PRODUCT_REF_AJUSTE') || 'Ajuste',
+    name: String(item.descricao || item.tipo_ajuste || 'Ajuste'),
+  };
+}
+
 function remessasNonEuComImposto(detalhes: DetalhesFatura): RemessaFatura[] {
   return detalhes.remessas.filter(r =>
     String(r.grupo || '').toUpperCase() !== 'EU' && Number(r.valor_imposto || 0) > 0,
@@ -382,10 +396,11 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
       specialDiscount += Math.abs(value);
       continue;
     }
+    const ajusteProduct = moloniAjusteProduct(item);
     await addMoloniLine(
       lines,
-      productRef('MOLONI_PRODUCT_REF_AJUSTE') || 'Ajuste',
-      String(item.descricao || item.tipo_ajuste || 'Ajuste'),
+      ajusteProduct.reference,
+      ajusteProduct.name,
       value,
     );
   }
