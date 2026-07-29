@@ -116,34 +116,35 @@ function FaturaDetalhe({ fatura, onClose, onReaberto }: { fatura: Fatura; onClos
     }
   }
 
-  async function enviarMoloniOdooPt() {
-    if (!confirm('Emitir fatura no Moloni e criar a Nota de Debito no Odoo PT?')) return;
+  async function enviarMoloniOdooPt(forceMoloni = false) {
+    const msg = forceMoloni
+      ? 'Reemitir a fatura no Moloni para esta fatura fechada? Isso cria um novo draft no Moloni e mantem a ND Odoo existente.'
+      : 'Emitir fatura no Moloni e criar a Nota de Debito no Odoo PT?';
+    if (!confirm(msg)) return;
     setEnviandoOdoo(true);
     const res = await fetch('/api/pt/moloni-odoo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ faturaId: fatura.fatura_id }),
+      body: JSON.stringify({ faturaId: fatura.fatura_id, forceMoloni }),
     }).then(r => r.json());
     setEnviandoOdoo(false);
     if (res.ok) {
       const moloni = res.moloni
-        ? `${res.moloni.jaExistia ? 'Moloni ja existia' : 'Moloni emitido'}: ${res.moloni.label || res.moloni.id}`
+        ? `${res.moloni.reprocessado ? 'Moloni reemitido' : res.moloni.jaExistia ? 'Moloni ja existia' : 'Moloni emitido'}: ${res.moloni.label || res.moloni.id}`
         : 'Moloni sem valor a emitir';
       const nd = res.odooNd
         ? `${res.odooNd.jaExistia ? 'ND Odoo ja existia' : 'ND Odoo criada'}: ${res.odooNd.name || res.odooNd.id}`
         : 'ND Odoo sem impostos a debitar';
       const totalMoloni = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || fatura.moeda || 'EUR' }).format(res.totalMoloniEstimado || 0);
       const totalNd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: res.moeda || fatura.moeda || 'EUR' }).format(res.totalNotaDebito || 0);
-      alert(`Integracao PT OK
-${moloni} - ${totalMoloni}
-${nd} - ${totalNd}
-Vencimento: ${fmtDate(res.vencimento)}
-Anexos: Excel + PDF da ND`);
+      alert(`Integracao PT OK\n${moloni} - ${totalMoloni}\n${nd} - ${totalNd}\nVencimento: ${fmtDate(res.vencimento)}\nAnexos: Excel + PDF da ND`);
+      if (!forceMoloni && res.moloni?.jaExistia && confirm('Essa fatura ja tinha Moloni vinculado. Quer reemitir o Moloni agora para aplicar TMS/MOR?')) {
+        await enviarMoloniOdooPt(true);
+      }
     } else {
       alert('Erro Moloni/Odoo PT: ' + (res.error || 'desconhecido'));
     }
   }
-
 
   const moeda = resumo?.moeda || fatura.moeda || 'USD';
   const valorFrete = resumo ? resumo.valor_frete : fatura.valor_frete;
@@ -187,7 +188,7 @@ Anexos: Excel + PDF da ND`);
             </a>
           )}
           {String(fatura.pais || '').toUpperCase() === 'PT' && (
-            <button className="btn text-xs" onClick={enviarMoloniOdooPt} disabled={enviandoOdoo}>
+            <button className="btn text-xs" onClick={() => enviarMoloniOdooPt()} disabled={enviandoOdoo}>
               {enviandoOdoo ? 'Enviando...' : '+ Moloni/Odoo'}
             </button>
           )}

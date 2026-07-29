@@ -708,7 +708,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Odoo nao configurado (faltam env vars ODOO_*).' }, { status: 500 });
   }
 
-  const { faturaId } = await req.json();
+  const body = await req.json();
+  const { faturaId } = body;
+  const forceMoloni = !!body.forceMoloni;
   if (!faturaId) return NextResponse.json({ error: 'faturaId obrigatorio' }, { status: 400 });
 
   await ensureIntegrationTable();
@@ -734,7 +736,7 @@ export async function POST(req: NextRequest) {
     let integracao = await readIntegration(fat.fatura_id);
 
     let moloniCustomer = integracao?.moloni_customer_id ? await getMoloniCustomerDetails(Number(integracao.moloni_customer_id)) : null;
-    let moloni = integracao?.moloni_document_id
+    let moloni: { id: number; label: string; customerId: number | null; jaExistia: boolean; reprocessado?: boolean } | null = integracao?.moloni_document_id && !forceMoloni
       ? { id: Number(integracao.moloni_document_id), label: integracao.moloni_label || String(integracao.moloni_document_id), customerId: Number(integracao.moloni_customer_id || 0) || null, jaExistia: true }
       : null;
     if (!moloni) {
@@ -742,7 +744,7 @@ export async function POST(req: NextRequest) {
       if (created) {
         await saveIntegration(fat.fatura_id, { moloni_document_id: created.id, moloni_label: created.label, moloni_customer_id: created.customerId });
         moloniCustomer = created.customer;
-        moloni = { id: created.id, label: created.label, customerId: created.customerId, jaExistia: false };
+        moloni = { id: created.id, label: created.label, customerId: created.customerId, jaExistia: false, reprocessado: forceMoloni };
       }
     }
 
