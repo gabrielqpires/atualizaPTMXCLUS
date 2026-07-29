@@ -1,4 +1,4 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { query } from '@/lib/db';
@@ -23,6 +23,8 @@ const EXCEL_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.
 const PT_COMPANY_ID = Number(process.env.ODOO_PT_COMPANY_ID || 3);
 const PT_SALES_JOURNAL_ID = Number(process.env.ODOO_PT_SALES_JOURNAL_ID || 29);
 const PT_INCOME_ACCOUNT_ID = Number(process.env.ODOO_PT_INCOME_ACCOUNT_ID || 1760);
+const TMS_UNIT_PRICE = 0.53;
+const MOR_UNIT_PRICE = 1.30;
 
 type ResumoFatura = {
   valor_frete?: number;
@@ -40,6 +42,8 @@ type RemessaFatura = {
   grupo?: string | null;
   valor_frete?: number;
   valor_imposto?: number;
+  tipo?: string | null;
+  isManual?: boolean;
 };
 
 type ItemFatura = {
@@ -271,7 +275,8 @@ function productRef(key: string): string {
   return String(process.env[key] || '').trim();
 }
 
-async function addMoloniLine(lines: MoloniLine[], reference: string, name: string, amount: number) {
+async function addMoloniLine(lines: MoloniLine[], reference: string, name: string, amount: number, qty = 1) {
+  const quantity = Math.max(1, Number(qty || 1));
   const value = round2(Number(amount || 0));
   if (value < 0.01) return;
   const cfg = moloniConfig();
@@ -280,8 +285,8 @@ async function addMoloniLine(lines: MoloniLine[], reference: string, name: strin
     product_id: productId,
     name,
     summary: '',
-    qty: 1,
-    price: value,
+    qty: quantity,
+    price: round2(value / quantity),
     discount: 0,
     order: lines.length + 1,
     exemption_reason: cfg.exemptionReason,
@@ -289,6 +294,40 @@ async function addMoloniLine(lines: MoloniLine[], reference: string, name: strin
   });
 }
 
+
+function techMoloniLine(cliente: Cliente, detalhes: DetalhesFatura): { reference: string; name: string; amount: number; qty: number } | null {
+  const tms = !!cliente.tms;
+  const mor = !!cliente.mor;
+  if (!tms && !mor) return null;
+
+  const qty = detalhes.remessas.filter(r => !r.isManual && String(r.tipo || 'remessa') === 'remessa').length;
+  if (qty < 1) return null;
+
+  if (tms && mor) {
+    return {
+      reference: productRef('MOLONI_PRODUCT_REF_TMS_MOR') || 'TMS & MOR',
+      name: productRef('MOLONI_PRODUCT_NAME_TMS_MOR') || 'TMS & MOR',
+      amount: round2(qty * (TMS_UNIT_PRICE + MOR_UNIT_PRICE)),
+      qty,
+    };
+  }
+
+  if (tms) {
+    return {
+      reference: productRef('MOLONI_PRODUCT_REF_TMS') || 'TMS',
+      name: productRef('MOLONI_PRODUCT_NAME_TMS') || 'TMS',
+      amount: round2(qty * TMS_UNIT_PRICE),
+      qty,
+    };
+  }
+
+  return {
+    reference: productRef('MOLONI_PRODUCT_REF_MOR') || 'MOR',
+    name: productRef('MOLONI_PRODUCT_NAME_MOR') || 'MOR',
+    amount: round2(qty * MOR_UNIT_PRICE),
+    qty,
+  };
+}
 function parseMoloniDocument(resp: MoloniInvoiceResponse): { id: number; label: string } {
   if (typeof resp === 'number') return { id: resp, label: String(resp) };
   const id = Number(resp.document_id || resp.invoice_id || resp.id || 0);
@@ -324,6 +363,11 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
     productRef('MOLONI_PRODUCT_NAME_NON_EU') || 'Servico de Transporte Internacional fora da Uniao Europeia - 1 envio',
     freteNonEu,
   );
+  const techLine = techMoloniLine(cliente, detalhes);
+  if (techLine) {
+    await addMoloniLine(lines, techLine.reference, techLine.name, techLine.amount, techLine.qty);
+  }
+
   await addMoloniLine(
     lines,
     productRef('MOLONI_PRODUCT_REF_FEE') || 'Intercompany Cross-Border Fee',
@@ -723,7 +767,8 @@ export async function POST(req: NextRequest) {
       totalMoloniEstimado: round2(
         Number(detalhes.resumo.valor_frete || 0) +
         Number(detalhes.resumo.valor_manual || 0) +
-        Number(detalhes.resumo.taxa_intercompany || 0),
+        Number(detalhes.resumo.taxa_intercompany || 0) +
+        Number(techMoloniLine(cliente, detalhes)?.amount || 0),
       ),
       totalNotaDebito: totalDutiesNonEu(detalhes),
       filename: excel.filename,
