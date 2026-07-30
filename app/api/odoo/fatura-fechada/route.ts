@@ -214,17 +214,31 @@ export async function POST(req: NextRequest) {
     const currencyId = await getCurrencyId(moeda);
     const partnerId = await getOrCreatePartner(cliente, fat.nome_cliente);
     const numFatura = fat.num_fatura || fat.fatura_id;
-    const ref = `Fatura ${numFatura}`;
+    const painelRef = `Painel ${fat.fatura_id}`;
+    const legacyRef = `Fatura ${numFatura}`;
 
-    const existing = await execKw<OdooMoveRead[]>('account.move', 'search_read', [[
+    let existing = await execKw<OdooMoveRead[]>('account.move', 'search_read', [[
       ['company_id', '=', companyId],
       ['move_type', '=', 'out_invoice'],
-      ['ref', '=', ref],
+      ['ref', '=', painelRef],
     ]], {
       fields: ['id', 'name', 'amount_total', 'payment_state', 'invoice_date_due'],
       limit: 1,
       context: ctx,
     });
+
+    if (!existing[0]?.id) {
+      existing = await execKw<OdooMoveRead[]>('account.move', 'search_read', [[
+        ['company_id', '=', companyId],
+        ['move_type', '=', 'out_invoice'],
+        ['partner_id', '=', partnerId],
+        ['ref', '=', legacyRef],
+      ]], {
+        fields: ['id', 'name', 'amount_total', 'payment_state', 'invoice_date_due'],
+        limit: 1,
+        context: ctx,
+      });
+    }
 
     if (existing[0]?.id) {
       const attachmentId = await anexarExcel(existing[0].id, excel.filename, excel.buffer, ctx);
@@ -273,7 +287,9 @@ export async function POST(req: NextRequest) {
       invoice_date: hoje,
       invoice_date_due: vencimento,
       invoice_payment_term_id: false,
-      ref,
+      ref: painelRef,
+      invoice_origin: legacyRef,
+      payment_reference: legacyRef,
       invoice_line_ids: linhas,
     };
     if (currencyId) invoiceVals.currency_id = currencyId;
