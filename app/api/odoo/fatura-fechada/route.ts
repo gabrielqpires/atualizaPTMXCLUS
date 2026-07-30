@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const COMPANY_BY_PAIS: Record<string, number> = { MX: 2 };
 const EXCEL_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const PARCEL_ODOO_USD_TO_MXN = 17;
 
 type ResumoFatura = {
   valor_frete?: number;
@@ -121,6 +122,10 @@ function ajusteNome(item: ItemFatura, numFatura: string): string {
   return descricao ? `${tipo} - ${numFatura} - ${descricao}` : `${tipo} - ${numFatura}`;
 }
 
+function isParcelCliente(cliente: Cliente, nomeCliente: string): boolean {
+  return /\bparcel\b/i.test(`${cliente.nome || ''} ${nomeCliente || ''}`);
+}
+
 async function getOrCreatePartner(cliente: Cliente, nomeCliente: string): Promise<number> {
   const email = primeiroEmail(cliente.emails_contato, cliente.emails_usuario);
   if (email) {
@@ -210,7 +215,10 @@ export async function POST(req: NextRequest) {
     const detalhes = await fetchDetalhes(req, fat.fatura_id);
     const resumo = detalhes.resumo;
     const excel = await fetchExcel(req, fat);
-    const moeda = String(resumo.moeda || fat.moeda || 'MXN').toUpperCase();
+    const parcelOdooMxn = isParcelCliente(cliente, fat.nome_cliente);
+    const moedaOriginal = String(resumo.moeda || fat.moeda || 'MXN').toUpperCase();
+    const moeda = parcelOdooMxn ? 'MXN' : moedaOriginal;
+    const multiplicadorOdoo = parcelOdooMxn && moedaOriginal === 'USD' ? PARCEL_ODOO_USD_TO_MXN : 1;
     const currencyId = await getCurrencyId(moeda);
     const partnerId = await getOrCreatePartner(cliente, fat.nome_cliente);
     const numFatura = fat.num_fatura || fat.fatura_id;
@@ -261,7 +269,7 @@ export async function POST(req: NextRequest) {
       const value = round2(Number(amount || 0));
       if (Math.abs(value) >= 0.01) {
         const productId = await getOrCreateServiceProduct(code, name, ctx);
-        linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: value, tax_ids: [[6, 0, []]] }]);
+        linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: round2(value * multiplicadorOdoo), tax_ids: [[6, 0, []]] }]);
       }
     };
     for (const remessa of detalhes.remessas) {

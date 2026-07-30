@@ -11,6 +11,7 @@ export const dynamic = 'force-dynamic';
 // Mapa país → company_id do Odoo. Por enquanto SÓ MX.
 const COMPANY_BY_PAIS: Record<string, number> = { MX: 2 };
 const STRIPE_JOURNAL_ID = 26; // diario Stripe da empresa MX
+const PARCEL_ODOO_USD_TO_MXN = 17;
 type OdooRel = [number, string] | false;
 type OdooInvoiceRead = {
   id?: number;
@@ -37,6 +38,10 @@ function primeiroEmail(...values: Array<string | null | undefined>): string {
     .split(/[;,\s]+/)
     .map(v => v.trim().toLowerCase())
     .find(v => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) || '';
+}
+
+function isParcelCliente(cliente: Cliente | null, nome?: string | null): boolean {
+  return /\bparcel\b/i.test(`${cliente?.nome || ''} ${nome || ''}`);
 }
 
 async function valoresParaRemessa(r: Remessa, cliente: Cliente | null, pais: string) {
@@ -178,6 +183,10 @@ export async function POST(req: NextRequest) {
   if (!companyId) return NextResponse.json({ error: `Sem empresa Odoo para o país ${pais || '(vazio)'} (por enquanto só MX).` }, { status: 400 });
 
   const { moeda, frete, imposto } = await valoresParaRemessa(r, cliente, pais);
+  const parcelOdooMxn = isParcelCliente(cliente) && moeda === 'USD';
+  const moedaOdoo = parcelOdooMxn ? 'MXN' : moeda;
+  const freteOdoo = parcelOdooMxn ? round2(frete * PARCEL_ODOO_USD_TO_MXN) : frete;
+  const impostoOdoo = parcelOdooMxn ? round2(imposto * PARCEL_ODOO_USD_TO_MXN) : imposto;
   if (frete <= 0 && imposto <= 0) {
     return NextResponse.json({ error: 'Remessa sem valor a faturar.' }, { status: 400 });
   }
@@ -212,15 +221,15 @@ export async function POST(req: NextRequest) {
 
     // 2) Fatura de cliente (conta a receber) com 2 linhas, sem imposto do Odoo
     const linhas: unknown[] = [];
-    if (frete > 0) {
+    if (freteOdoo > 0) {
       const name = `AWB ${r.awb} - Freight`;
       const productId = await getOrCreateServiceProduct(`SS-AWB-${r.awb}-FREIGHT`, name, ctx);
-      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: frete, tax_ids: [[6, 0, []]] }]);
+      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: freteOdoo, tax_ids: [[6, 0, []]] }]);
     }
-    if (imposto > 0) {
+    if (impostoOdoo > 0) {
       const name = `AWB ${r.awb} - Duties & Taxes`;
       const productId = await getOrCreateServiceProduct(`SS-AWB-${r.awb}-DUTIES`, name, ctx);
-      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: imposto, tax_ids: [[6, 0, []]] }]);
+      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: impostoOdoo, tax_ids: [[6, 0, []]] }]);
     }
 
     const hoje = new Date().toISOString().slice(0, 10);
@@ -262,11 +271,11 @@ export async function POST(req: NextRequest) {
       ok: true,
       invoiceId,
       numero: mv?.name || String(invoiceId),
-      total: mv?.amount_total ?? round2(frete + imposto),
+      total: mv?.amount_total ?? round2(freteOdoo + impostoOdoo),
       pagamento: mv?.payment_state || '?',
       paymentMoveId,
       resolvidoLocalmente,
-      frete, imposto, moeda,
+      frete: freteOdoo, imposto: impostoOdoo, moeda: moedaOdoo,
     });
   } catch (e) {
     return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 500 });
