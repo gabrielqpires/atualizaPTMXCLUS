@@ -347,7 +347,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
     const mergeAmountCells = (row: ExcelJS.Row) => {
       if (layoutBrlParcelEla) return;
       ws.mergeCells(row.number, 5, row.number, 6);
-      row.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' };
+      row.getCell(5).alignment = { vertical: 'middle', horizontal: 'center' };
     };
 
     const hdr = ws.addRow([
