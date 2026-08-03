@@ -121,6 +121,13 @@ type MoloniTax = {
 
 let moloniIva23TaxIdCache: number | null = null;
 
+function parseMoloniNumber(value: unknown): number {
+  if (typeof value === 'number') return value;
+  const text = String(value ?? '').replace(/\s/g, '').replace(',', '.');
+  const n = Number(text);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function addDaysIso(dateIso: string, days: number): string {
   const [year, month, day] = dateIso.split('-').map(Number);
   const d = new Date(Date.UTC(year, month - 1, day));
@@ -320,12 +327,11 @@ async function getMoloniIva23TaxId(): Promise<number> {
   const cfg = moloniConfig();
   const taxes = await moloniPost<MoloniTax[]>('taxes/getAll', {
     company_id: cfg.companyId,
-    country_id: cfg.countryId,
-    value: 23,
-    type: 1,
     with_invisible: 1,
   });
-  const isIva23 = (tax: MoloniTax) => Number(tax.value) === 23 && Number(tax.type) === 1;
+  const isPercentTax = (tax: MoloniTax) => !tax.type || parseMoloniNumber(tax.type) === 1;
+  const hasIva23Name = (tax: MoloniTax) => /IVA/i.test(String(tax.name || '')) && /(^|\D)23([,.]0+)?(\D|$)/.test(String(tax.name || ''));
+  const isIva23 = (tax: MoloniTax) => isPercentTax(tax) && (parseMoloniNumber(tax.value) === 23 || hasIva23Name(tax));
   const tax = taxes.find(t =>
     isIva23(t) &&
     String(t.vat_type || '').toUpperCase() === 'NOR' &&
