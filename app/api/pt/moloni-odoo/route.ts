@@ -99,9 +99,27 @@ type MoloniLine = {
   price: number;
   discount: number;
   order: number;
-  exemption_reason: string;
-  taxes: unknown[];
+  exemption_reason?: string;
+  taxes: MoloniLineTax[];
 };
+
+type MoloniLineTax = {
+  tax_id: number;
+  value: number;
+  order: number;
+  cumulative: number;
+};
+
+type MoloniTax = {
+  tax_id?: number;
+  name?: string;
+  value?: number | string;
+  type?: number | string;
+  vat_type?: string;
+  active_by_default?: number | string;
+};
+
+let moloniIva23TaxIdCache: number | null = null;
 
 function addDaysIso(dateIso: string, days: number): string {
   const [year, month, day] = dateIso.split('-').map(Number);
@@ -289,13 +307,53 @@ function productRef(key: string): string {
   return String(process.env[key] || '').trim();
 }
 
-async function addMoloniLine(lines: MoloniLine[], reference: string, name: string, amount: number, qty = 1) {
+async function getMoloniIva23TaxId(): Promise<number> {
+  const configured = Number(
+    process.env.MOLONI_IVA_23_TAX_ID ||
+    process.env.MOLONI_TAX_IVA_23_ID ||
+    process.env.MOLONI_TAX_ID_IVA_23 ||
+    0,
+  );
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  if (moloniIva23TaxIdCache) return moloniIva23TaxIdCache;
+
+  const cfg = moloniConfig();
+  const taxes = await moloniPost<MoloniTax[]>('taxes/getAll', {
+    company_id: cfg.companyId,
+    country_id: cfg.countryId,
+    value: 23,
+    type: 1,
+    with_invisible: 1,
+  });
+  const isIva23 = (tax: MoloniTax) => Number(tax.value) === 23 && Number(tax.type) === 1;
+  const tax = taxes.find(t =>
+    isIva23(t) &&
+    String(t.vat_type || '').toUpperCase() === 'NOR' &&
+    Number(t.active_by_default ?? 1) === 1,
+  ) || taxes.find(t =>
+    isIva23(t) &&
+    Number(t.active_by_default ?? 1) === 1,
+  ) || taxes.find(isIva23);
+
+  const taxId = Number(tax?.tax_id || 0);
+  if (!taxId) {
+    throw new Error('Moloni: nao encontrei o imposto IVA 23% para aplicar em TMS/MOR.');
+  }
+  moloniIva23TaxIdCache = taxId;
+  return taxId;
+}
+
+async function iva23Taxes(): Promise<MoloniLineTax[]> {
+  return [{ tax_id: await getMoloniIva23TaxId(), value: 23, order: 1, cumulative: 0 }];
+}
+
+async function addMoloniLine(lines: MoloniLine[], reference: string, name: string, amount: number, qty = 1, options: { iva23?: boolean } = {}) {
   const quantity = Math.max(1, Number(qty || 1));
   const value = round2(Number(amount || 0));
   if (value < 0.01) return;
   const cfg = moloniConfig();
   const productId = await getOrCreateMoloniProduct(reference, name);
-  lines.push({
+  const line: MoloniLine = {
     product_id: productId,
     name,
     summary: '',
@@ -303,9 +361,10 @@ async function addMoloniLine(lines: MoloniLine[], reference: string, name: strin
     price: round2(value / quantity),
     discount: 0,
     order: lines.length + 1,
-    exemption_reason: cfg.exemptionReason,
-    taxes: [],
-  });
+    taxes: options.iva23 ? await iva23Taxes() : [],
+  };
+  if (!options.iva23) line.exemption_reason = cfg.exemptionReason;
+  lines.push(line);
 }
 
 
@@ -379,7 +438,7 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
   );
   const techLine = techMoloniLine(cliente, detalhes);
   if (techLine) {
-    await addMoloniLine(lines, techLine.reference, techLine.name, techLine.amount, techLine.qty);
+    await addMoloniLine(lines, techLine.reference, techLine.name, techLine.amount, techLine.qty, { iva23: true });
   }
 
   await addMoloniLine(
@@ -786,7 +845,7 @@ export async function POST(req: NextRequest) {
         Number(detalhes.resumo.valor_frete || 0) +
         Number(detalhes.resumo.valor_manual || 0) +
         Number(detalhes.resumo.taxa_intercompany || 0) +
-        Number(techMoloniLine(cliente, detalhes)?.amount || 0),
+        Number(techMoloniLine(cliente, detalhes)?.amount || 0) * 1.23,
       ),
       totalNotaDebito: totalDutiesNonEu(detalhes),
       filename: excel.filename,
