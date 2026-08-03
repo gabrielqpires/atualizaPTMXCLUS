@@ -332,6 +332,15 @@ function productRef(key: string): string {
   return String(process.env[key] || '').trim();
 }
 
+function moloniTransportName(baseName: string, envios: number): string {
+  const count = Math.max(1, Math.trunc(Number(envios || 0)));
+  const suffix = `${count} ${count === 1 ? 'envio' : 'envios'}`;
+  const cleanBase = String(baseName || '')
+    .trim()
+    .replace(/\s*-\s*\d+\s+envios?$/i, '');
+  return `${cleanBase} - ${suffix}`;
+}
+
 async function getMoloniIva23TaxId(): Promise<number> {
   const configured = Number(
     process.env.MOLONI_IVA_23_TAX_ID ||
@@ -474,24 +483,36 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
   const customerId = await getOrCreateMoloniCustomer(nomeCliente, email);
   const customer = await getMoloniCustomerDetails(customerId);
 
-  const freteEu = detalhes.remessas
-    .filter(r => String(r.grupo || '').toUpperCase() === 'EU')
+  const remessasEu = detalhes.remessas.filter(r => String(r.grupo || '').toUpperCase() === 'EU');
+  const remessasNonEu = detalhes.remessas.filter(r => String(r.grupo || '').toUpperCase() !== 'EU');
+  const countEnvios = (rows: RemessaFatura[]) => rows.filter(r =>
+    String(r.tipo || 'remessa') === 'remessa',
+  ).length;
+
+  const freteEu = remessasEu
     .reduce((s, r) => s + Number(r.valor_frete || 0), 0);
-  const freteNonEu = detalhes.remessas
-    .filter(r => String(r.grupo || '').toUpperCase() !== 'EU')
+  const freteNonEu = remessasNonEu
     .reduce((s, r) => s + Number(r.valor_frete || 0), 0);
+  const nomeFreteEu = moloniTransportName(
+    productRef('MOLONI_PRODUCT_NAME_EU') || 'Servico de Transporte Internacional na Uniao Europeia',
+    countEnvios(remessasEu),
+  );
+  const nomeFreteNonEu = moloniTransportName(
+    productRef('MOLONI_PRODUCT_NAME_NON_EU') || 'Servico de Transporte Internacional fora da Uniao Europeia',
+    countEnvios(remessasNonEu),
+  );
 
   const lines: MoloniLine[] = [];
   await addMoloniLine(
     lines,
     productRef('MOLONI_PRODUCT_REF_EU') || 'Servico de Transporte',
-    productRef('MOLONI_PRODUCT_NAME_EU') || 'Servico de Transporte Internacional na Uniao Europeia - 1 envio',
+    nomeFreteEu,
     freteEu,
   );
   await addMoloniLine(
     lines,
     productRef('MOLONI_PRODUCT_REF_NON_EU') || 'Transporte Fora UE',
-    productRef('MOLONI_PRODUCT_NAME_NON_EU') || 'Servico de Transporte Internacional fora da Uniao Europeia - 1 envio',
+    nomeFreteNonEu,
     freteNonEu,
   );
   const techLine = techMoloniLine(cliente, detalhes);
