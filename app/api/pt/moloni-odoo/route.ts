@@ -44,7 +44,9 @@ type ResumoFatura = {
 type RemessaFatura = {
   remessa_id?: string;
   awb?: string | null;
+  order_id?: string | null;
   grupo?: string | null;
+  contrato_descricao?: string | null;
   valor_frete?: number;
   valor_imposto?: number;
   tipo?: string | null;
@@ -332,13 +334,19 @@ function productRef(key: string): string {
   return String(process.env[key] || '').trim();
 }
 
-function moloniTransportName(baseName: string, envios: number): string {
-  const count = Math.max(1, Math.trunc(Number(envios || 0)));
-  const suffix = `${count} ${count === 1 ? 'envio' : 'envios'}`;
+function moloniTransportName(baseName: string, quantity: number, kind: 'envio' | 'retorno'): string {
+  const count = Math.max(1, Math.trunc(Number(quantity || 0)));
+  const suffix = `${count} ${kind === 'envio'
+    ? (count === 1 ? 'envio' : 'envios')
+    : (count === 1 ? 'retorno' : 'retornos')}`;
   const cleanBase = String(baseName || '')
     .trim()
-    .replace(/\s*-\s*\d+\s+envios?$/i, '');
+    .replace(/\s*-\s*\d+\s+(?:envios?|retornos?)$/i, '');
   return `${cleanBase} - ${suffix}`;
+}
+
+function isReturnMoloni(r: RemessaFatura): boolean {
+  return /return/i.test(`${r.order_id || ''} ${r.contrato_descricao || ''}`);
 }
 
 async function getMoloniIva23TaxId(): Promise<number> {
@@ -485,35 +493,42 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
 
   const remessasEu = detalhes.remessas.filter(r => String(r.grupo || '').toUpperCase() === 'EU');
   const remessasNonEu = detalhes.remessas.filter(r => String(r.grupo || '').toUpperCase() !== 'EU');
+  const enviosEu = remessasEu.filter(r => !isReturnMoloni(r));
+  const enviosNonEu = remessasNonEu.filter(r => !isReturnMoloni(r));
+  const retornosEu = remessasEu.filter(isReturnMoloni);
+  const retornosNonEu = remessasNonEu.filter(isReturnMoloni);
   const countEnvios = (rows: RemessaFatura[]) => rows.filter(r =>
     String(r.tipo || 'remessa') === 'remessa',
   ).length;
 
-  const freteEu = remessasEu
-    .reduce((s, r) => s + Number(r.valor_frete || 0), 0);
-  const freteNonEu = remessasNonEu
-    .reduce((s, r) => s + Number(r.valor_frete || 0), 0);
-  const nomeFreteEu = moloniTransportName(
-    productRef('MOLONI_PRODUCT_NAME_EU') || 'Servico de Transporte Internacional na Uniao Europeia',
-    countEnvios(remessasEu),
-  );
-  const nomeFreteNonEu = moloniTransportName(
-    productRef('MOLONI_PRODUCT_NAME_NON_EU') || 'Servico de Transporte Internacional fora da Uniao Europeia',
-    countEnvios(remessasNonEu),
-  );
+  const sumFrete = (rows: RemessaFatura[]) => rows.reduce((s, r) => s + Number(r.valor_frete || 0), 0);
+  const baseNameEu = productRef('MOLONI_PRODUCT_NAME_EU') || 'Servico de Transporte Internacional na Uniao Europeia';
+  const baseNameNonEu = productRef('MOLONI_PRODUCT_NAME_NON_EU') || 'Servico de Transporte Internacional fora da Uniao Europeia';
 
   const lines: MoloniLine[] = [];
   await addMoloniLine(
     lines,
     productRef('MOLONI_PRODUCT_REF_EU') || 'Servico de Transporte',
-    nomeFreteEu,
-    freteEu,
+    moloniTransportName(baseNameEu, countEnvios(enviosEu), 'envio'),
+    sumFrete(enviosEu),
   );
   await addMoloniLine(
     lines,
     productRef('MOLONI_PRODUCT_REF_NON_EU') || 'Transporte Fora UE',
-    nomeFreteNonEu,
-    freteNonEu,
+    moloniTransportName(baseNameNonEu, countEnvios(enviosNonEu), 'envio'),
+    sumFrete(enviosNonEu),
+  );
+  await addMoloniLine(
+    lines,
+    productRef('MOLONI_PRODUCT_REF_EU') || 'Servico de Transporte',
+    moloniTransportName(baseNameEu, countEnvios(retornosEu), 'retorno'),
+    sumFrete(retornosEu),
+  );
+  await addMoloniLine(
+    lines,
+    productRef('MOLONI_PRODUCT_REF_NON_EU') || 'Transporte Fora UE',
+    moloniTransportName(baseNameNonEu, countEnvios(retornosNonEu), 'retorno'),
+    sumFrete(retornosNonEu),
   );
   const techLine = techMoloniLine(cliente, detalhes);
   if (techLine) {
