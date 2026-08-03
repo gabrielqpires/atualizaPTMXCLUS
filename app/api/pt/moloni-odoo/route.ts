@@ -124,7 +124,20 @@ type MoloniTax = {
   active_by_default?: number | string;
 };
 
+type MoloniMaturityDate = {
+  maturity_date_id?: number;
+  name?: string;
+  days?: number | string;
+  associated_discount?: number | string;
+};
+
+type MoloniMaturityDateResponse = number | {
+  valid?: number;
+  maturity_date_id?: number;
+};
+
 let moloniIva23TaxIdCache: number | null = null;
+let moloniMaturity7DateIdCache: number | null = null;
 
 function parseMoloniNumber(value: unknown): number {
   if (typeof value === 'number') return value;
@@ -358,6 +371,40 @@ async function iva23Taxes(): Promise<MoloniLineTax[]> {
   return [{ tax_id: await getMoloniIva23TaxId(), value: 23, order: 1, cumulative: 0 }];
 }
 
+async function getMoloniMaturity7DateId(): Promise<number> {
+  const configured = Number(
+    process.env.MOLONI_MATURITY_DATE_7_ID ||
+    process.env.MOLONI_7_DAYS_MATURITY_DATE_ID ||
+    0,
+  );
+  if (Number.isFinite(configured) && configured > 0) return configured;
+  if (moloniMaturity7DateIdCache) return moloniMaturity7DateIdCache;
+
+  const cfg = moloniConfig();
+  const maturityDates = await moloniPost<MoloniMaturityDate[]>('maturityDates/getAll', {
+    company_id: cfg.companyId,
+  });
+  const existing = Array.isArray(maturityDates)
+    ? maturityDates.find(m => parseMoloniNumber(m.days) === 7)
+    : null;
+  const existingId = Number(existing?.maturity_date_id || 0);
+  if (existingId > 0) {
+    moloniMaturity7DateIdCache = existingId;
+    return existingId;
+  }
+
+  const created = await moloniPost<MoloniMaturityDateResponse>('maturityDates/insert', {
+    company_id: cfg.companyId,
+    name: '7 dias',
+    days: 7,
+    associated_discount: 0,
+  });
+  const createdId = typeof created === 'number' ? created : Number(created?.maturity_date_id || 0);
+  if (!createdId) throw new Error(`Moloni criou prazo 7 dias sem maturity_date_id: ${JSON.stringify(created).slice(0, 300)}`);
+  moloniMaturity7DateIdCache = createdId;
+  return createdId;
+}
+
 async function addMoloniLine(lines: MoloniLine[], reference: string, name: string, amount: number, qty = 1, options: { iva23?: boolean } = {}) {
   const quantity = Math.max(1, Number(qty || 1));
   const value = round2(Number(amount || 0));
@@ -482,11 +529,12 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
   const numFatura = fat.num_fatura || fat.fatura_id;
   const clientePainel = String(fat.nome_cliente || cliente.nome || nomeCliente).trim();
   const referenciaFaturamento = `Faturamento ${clientePainel || nomeCliente}`;
+  const maturityDateId = await getMoloniMaturity7DateId();
   const resp = await moloniPost<MoloniInvoiceResponse>('invoices/insert', {
     company_id: cfg.companyId,
     document_set_id: cfg.documentSetId,
     customer_id: customerId,
-    maturity_date_id: cfg.maturityDateId,
+    maturity_date_id: maturityDateId,
     date: dataDoc,
     expiration_date: vencimento,
     status: 0,
@@ -754,6 +802,7 @@ async function criarNotaDebitoOdoo(cliente: Cliente, fat: FaturaFechada, detalhe
     move_type: 'out_invoice',
     company_id: PT_COMPANY_ID,
     journal_id: PT_SALES_JOURNAL_ID,
+    name: `ND ${ndNumero}`,
     partner_id: partnerId,
     invoice_date: dataDoc,
     invoice_date_due: vencimento,
