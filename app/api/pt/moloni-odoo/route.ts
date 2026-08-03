@@ -410,6 +410,7 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
   if (specialDiscount > gross) throw new Error('Descontos maiores que o total positivo da fatura Moloni.');
 
   const numFatura = fat.num_fatura || fat.fatura_id;
+  const referenciaFaturamento = `Faturamento ${nomeCliente}`;
   const resp = await moloniPost<MoloniInvoiceResponse>('invoices/insert', {
     company_id: cfg.companyId,
     document_set_id: cfg.documentSetId,
@@ -420,9 +421,9 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
     status: 0,
     products: lines,
     special_discount: round2(specialDiscount),
-    our_reference: numFatura,
-    your_reference: fat.fatura_id,
-    notes: `Fatura ShipSmart ${numFatura}`,
+    our_reference: referenciaFaturamento,
+    your_reference: '',
+    notes: '',
   });
   return { ...parseMoloniDocument(resp), customerId, customer };
 }
@@ -746,7 +747,7 @@ export async function POST(req: NextRequest) {
     if (moeda !== 'EUR') return NextResponse.json({ error: `PT/Moloni esperado em EUR, mas a fatura esta em ${moeda}.` }, { status: 400 });
 
     const dataDoc = formatDateIsoLocal(new Date());
-    const vencimento = addDaysIso(dataDoc, Number(cliente.dias_vencimento || 7));
+    const vencimento = addDaysIso(dataDoc, 7);
     const excel = await fetchExcel(req, fat);
     let integracao = await readIntegration(fat.fatura_id);
 
