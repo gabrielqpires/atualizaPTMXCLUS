@@ -25,6 +25,11 @@ const PT_SALES_JOURNAL_ID = Number(process.env.ODOO_PT_SALES_JOURNAL_ID || 29);
 const PT_INCOME_ACCOUNT_ID = Number(process.env.ODOO_PT_INCOME_ACCOUNT_ID || 1760);
 const TMS_UNIT_PRICE = 0.53;
 const MOR_UNIT_PRICE = 1.30;
+const MOLONI_PT_NOTES = `Dados bancários da Shipsmart Portugal:
+
+Conta depósito à ordem: 45845428064
+IBAN: PT50-0033-0000-45845428064-05
+BIC: BCOMPTP`;
 
 type ResumoFatura = {
   valor_frete?: number;
@@ -475,7 +480,8 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
   if (specialDiscount > gross) throw new Error('Descontos maiores que o total positivo da fatura Moloni.');
 
   const numFatura = fat.num_fatura || fat.fatura_id;
-  const referenciaFaturamento = `Faturamento ${nomeCliente}`;
+  const clientePainel = String(fat.nome_cliente || cliente.nome || nomeCliente).trim();
+  const referenciaFaturamento = `Faturamento ${clientePainel || nomeCliente}`;
   const resp = await moloniPost<MoloniInvoiceResponse>('invoices/insert', {
     company_id: cfg.companyId,
     document_set_id: cfg.documentSetId,
@@ -488,7 +494,7 @@ async function criarFaturaMoloni(cliente: Cliente, fat: FaturaFechada, detalhes:
     special_discount: round2(specialDiscount),
     our_reference: referenciaFaturamento,
     your_reference: '',
-    notes: '',
+    notes: MOLONI_PT_NOTES,
   });
   return { ...parseMoloniDocument(resp), customerId, customer };
 }
