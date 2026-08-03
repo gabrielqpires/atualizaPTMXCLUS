@@ -162,7 +162,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
   const workbook = new ExcelJS.Workbook();
   workbook.calcProperties.fullCalcOnLoad = true;
   const clienteParcelEla = usarBrlParcelEla(cliente.nome);
-  const layoutBrlParcelEla = pais !== 'US' && clienteParcelEla;
+  const layoutBrlParcelEla = false;
   const layoutUsCloser = usarLayoutUsCloser(clienteId, cliente.nome);
   const taxaPctExcel = (clienteParcelEla || usarLayoutArzz(cliente.nome)) ? 3 : taxaPct;
 
