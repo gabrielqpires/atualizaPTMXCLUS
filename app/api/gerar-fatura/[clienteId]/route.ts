@@ -344,6 +344,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
         };
       }
     };
+    const mergeAmountCells = (row: ExcelJS.Row) => {
+      if (layoutBrlParcelEla) return;
+      ws.mergeCells(row.number, 5, row.number, 6);
+      row.getCell(5).alignment = { vertical: 'middle', horizontal: 'right' };
+    };
 
     const hdr = ws.addRow([
       'Created At', 'AWB', 'Destination', 'Peso',
@@ -394,6 +399,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       ws.addRow([]);
       const feeHdr = ws.addRow(['Fees', '', '', '', mxAmountHeader, '', ...(layoutBrlParcelEla ? [brlAmountHeader, '', ''] : [])]);
       styleSectionRow(feeHdr);
+      mergeAmountCells(feeHdr);
       const feeRow = ws.addRow([
         '', `Intercompany Cross-Border Fee (${taxaPctExcel}%)`, '', '',
         { formula: `(SUM(E${firstDataRow}:E${lastBeforeFeeRow})+SUM(F${firstDataRow}:F${lastDataRow}))*${taxaPctExcel / 100}` },
@@ -410,6 +416,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
         feeRow.getCell(7).font = { bold: true };
       }
       styleDataRow(feeRow);
+      mergeAmountCells(feeRow);
     }
 
     const lastBeforeTotalRow = ws.rowCount;
@@ -428,6 +435,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
       totalRow.getCell(5).numFmt = FMT_MOEDA;
       if (layoutBrlParcelEla) totalRow.getCell(7).numFmt = FMT_BRL;
       styleSectionRow(totalRow);
+      mergeAmountCells(totalRow);
     }
   } else {
     // ── Formato PT/US: Consolidado + Ajustes + Resumo (espelho do GerarFatura.gs) ──
