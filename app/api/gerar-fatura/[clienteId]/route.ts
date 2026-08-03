@@ -157,9 +157,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ clie
 
   const workbook = new ExcelJS.Workbook();
   workbook.calcProperties.fullCalcOnLoad = true;
-  const layoutBrlParcelEla = usarBrlParcelEla(cliente.nome);
+  const clienteParcelEla = usarBrlParcelEla(cliente.nome);
+  const layoutBrlParcelEla = pais !== 'US' && clienteParcelEla;
   const layoutUsCloser = usarLayoutUsCloser(clienteId, cliente.nome);
-  const taxaPctExcel = layoutBrlParcelEla ? 3 : taxaPct;
+  const taxaPctExcel = clienteParcelEla ? 3 : taxaPct;
 
   const CONSOLIDADO_HEADERS = [
     'Created At', 'AWB', 'Order', 'Destination', 'Weight',
