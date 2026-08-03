@@ -33,11 +33,15 @@ const PRETO = 'FF000000';
 const BRANCO = 'FFFFFFFF';
 
 function usarLayoutCompacto(pais: string, nomeCliente: string): boolean {
-  return pais === 'MX' || (pais === 'US' && /\bparcel\b/i.test(nomeCliente)) || usarBrlParcelEla(nomeCliente);
+  return pais === 'MX' || (pais === 'US' && (/\bparcel\b/i.test(nomeCliente) || usarLayoutArzz(nomeCliente))) || usarBrlParcelEla(nomeCliente);
 }
 
 function usarBrlParcelEla(nomeCliente: string): boolean {
   return /\bparcel\b/i.test(nomeCliente) || /\bela\s*retail\b/i.test(nomeCliente);
+}
+
+function usarLayoutArzz(nomeCliente: string): boolean {
+  return /\b(?:arzz|arezzo|schutz)\b/i.test(nomeCliente);
 }
 
 function usarLayoutUsCloser(clienteId: string, nomeCliente: string): boolean {
