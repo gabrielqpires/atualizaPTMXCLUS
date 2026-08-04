@@ -10,6 +10,8 @@ export const dynamic = 'force-dynamic';
 const COMPANY_BY_PAIS: Record<string, number> = { MX: 2 };
 const EXCEL_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const PARCEL_ODOO_USD_TO_MXN = 17;
+const MX_FREIGHT_INCOME_CODE = '401.01.02';
+const MX_DUTIES_INCOME_CODE = '401.01.03';
 
 type ResumoFatura = {
   valor_frete?: number;
@@ -108,6 +110,16 @@ async function fetchExcel(req: NextRequest, fat: FaturaFechada): Promise<{ buffe
 async function getCurrencyId(moeda: string): Promise<number | null> {
   const ids = await execKw<number[]>('res.currency', 'search', [[['name', '=', moeda.toUpperCase()]]], { limit: 1 });
   return ids[0] || null;
+}
+
+async function getIncomeAccountId(code: string, companyId: number, ctx: Record<string, unknown>): Promise<number> {
+  const ids = await execKw<number[]>('account.account', 'search', [[
+    ['company_ids', 'in', [companyId]],
+    ['code', '=', code],
+    ['account_type', 'in', ['income', 'income_other']],
+  ]], { limit: 1, context: ctx });
+  if (!ids[0]) throw new Error(`Conta de receita ${code} nao encontrada no Odoo MX.`);
+  return ids[0];
 }
 
 function ajusteValor(item: ItemFatura): number {
@@ -221,6 +233,10 @@ export async function POST(req: NextRequest) {
     const multiplicadorOdoo = parcelOdooMxn && moedaOriginal === 'USD' ? PARCEL_ODOO_USD_TO_MXN : 1;
     const currencyId = await getCurrencyId(moeda);
     const partnerId = await getOrCreatePartner(cliente, fat.nome_cliente);
+    const [freightAccountId, dutiesAccountId] = await Promise.all([
+      getIncomeAccountId(MX_FREIGHT_INCOME_CODE, companyId, ctx),
+      getIncomeAccountId(MX_DUTIES_INCOME_CODE, companyId, ctx),
+    ]);
     const numFatura = fat.num_fatura || fat.fatura_id;
     const painelRef = `Painel ${fat.fatura_id}`;
     const legacyRef = `Fatura ${numFatura}`;
@@ -265,18 +281,18 @@ export async function POST(req: NextRequest) {
     }
 
     const linhas: unknown[] = [];
-    const addLine = async (code: string, name: string, amount: number) => {
+    const addLine = async (code: string, name: string, amount: number, accountId?: number) => {
       const value = round2(Number(amount || 0));
       if (Math.abs(value) >= 0.01) {
         const productId = await getOrCreateServiceProduct(code, name, ctx);
-        linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: round2(value * multiplicadorOdoo), tax_ids: [[6, 0, []]] }]);
+        linhas.push([0, 0, { product_id: productId, ...(accountId ? { account_id: accountId } : {}), name, quantity: 1, price_unit: round2(value * multiplicadorOdoo), tax_ids: [[6, 0, []]] }]);
       }
     };
     for (const remessa of detalhes.remessas) {
       const awb = String(remessa.awb || remessa.remessa_id || '').trim();
       const suffix = awb || numFatura;
-      await addLine(`SS-AWB-${suffix}-FREIGHT`, `AWB ${suffix} - Freight`, Number(remessa.valor_frete || 0));
-      await addLine(`SS-AWB-${suffix}-DUTIES`, `AWB ${suffix} - Duties & Taxes`, Number(remessa.valor_imposto || 0));
+      await addLine(`SS-AWB-${suffix}-FREIGHT`, `AWB ${suffix} - Freight`, Number(remessa.valor_frete || 0), freightAccountId);
+      await addLine(`SS-AWB-${suffix}-DUTIES`, `AWB ${suffix} - Duties & Taxes`, Number(remessa.valor_imposto || 0), dutiesAccountId);
     }
     for (let idx = 0; idx < detalhes.itens.length; idx++) {
       const item = detalhes.itens[idx];

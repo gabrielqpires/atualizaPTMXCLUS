@@ -12,6 +12,8 @@ export const dynamic = 'force-dynamic';
 const COMPANY_BY_PAIS: Record<string, number> = { MX: 2 };
 const STRIPE_JOURNAL_ID = 26; // diario Stripe da empresa MX
 const PARCEL_ODOO_USD_TO_MXN = 17;
+const MX_FREIGHT_INCOME_CODE = '401.01.02';
+const MX_DUTIES_INCOME_CODE = '401.01.03';
 type OdooRel = [number, string] | false;
 type OdooInvoiceRead = {
   id?: number;
@@ -30,6 +32,16 @@ type OdooMoveLineRead = {
 
 function relId(value: OdooRel | undefined): number | null {
   return Array.isArray(value) ? value[0] : null;
+}
+
+async function getIncomeAccountId(code: string, companyId: number, ctx: Record<string, unknown>): Promise<number> {
+  const ids = await execKw<number[]>('account.account', 'search', [[
+    ['company_ids', 'in', [companyId]],
+    ['code', '=', code],
+    ['account_type', 'in', ['income', 'income_other']],
+  ]], { limit: 1, context: ctx });
+  if (!ids[0]) throw new Error(`Conta de receita ${code} nao encontrada no Odoo MX.`);
+  return ids[0];
 }
 
 function primeiroEmail(...values: Array<string | null | undefined>): string {
@@ -221,15 +233,19 @@ export async function POST(req: NextRequest) {
 
     // 2) Fatura de cliente (conta a receber) com 2 linhas, sem imposto do Odoo
     const linhas: unknown[] = [];
+    const [freightAccountId, dutiesAccountId] = await Promise.all([
+      getIncomeAccountId(MX_FREIGHT_INCOME_CODE, companyId, ctx),
+      getIncomeAccountId(MX_DUTIES_INCOME_CODE, companyId, ctx),
+    ]);
     if (freteOdoo > 0) {
       const name = `AWB ${r.awb} - Freight`;
       const productId = await getOrCreateServiceProduct(`SS-AWB-${r.awb}-FREIGHT`, name, ctx);
-      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: freteOdoo, tax_ids: [[6, 0, []]] }]);
+      linhas.push([0, 0, { product_id: productId, account_id: freightAccountId, name, quantity: 1, price_unit: freteOdoo, tax_ids: [[6, 0, []]] }]);
     }
     if (impostoOdoo > 0) {
       const name = `AWB ${r.awb} - Duties & Taxes`;
       const productId = await getOrCreateServiceProduct(`SS-AWB-${r.awb}-DUTIES`, name, ctx);
-      linhas.push([0, 0, { product_id: productId, name, quantity: 1, price_unit: impostoOdoo, tax_ids: [[6, 0, []]] }]);
+      linhas.push([0, 0, { product_id: productId, account_id: dutiesAccountId, name, quantity: 1, price_unit: impostoOdoo, tax_ids: [[6, 0, []]] }]);
     }
 
     const hoje = new Date().toISOString().slice(0, 10);
